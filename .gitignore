@@ -22,6 +22,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+jars/
 
 # Virtual environments
 venv/
@@ -84,3 +85,6 @@ logs/
 Thumbs.db
 .DS_Store
 *.pycZone*
+
+#Jar files
+*.jar
