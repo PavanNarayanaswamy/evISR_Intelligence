@@ -55,6 +55,7 @@ env/
 *.mkv
 *.flv
 *.wmv
+*.ts
 
 # Archives
 *.tar.gz
@@ -88,3 +89,5 @@ Thumbs.db
 
 #Jar files
 *.jar
+.mediamtx
+.mediamtx_v1.4.0_linux_amd64.tar.gz
