@@ -23,6 +23,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 jars/
+*.json
+*.pth
 
 # Virtual environments
 venv/

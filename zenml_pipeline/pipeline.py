@@ -3,6 +3,7 @@ from .steps import (
     download_clip_step,
     extract_metadata_step,
     decode_metadata_step,
+    object_detection,
 )
 
 @pipeline(enable_cache=False)
@@ -34,10 +35,10 @@ def isr_pipeline(
         output_bucket=output_bucket,
     )
 
-    # Object Detection (TS )
-    # -----------------------------
-    object_detection(
-        ts_path=ts_path,
-        output_path=output_path,
-        confidence_threshold=confidence_threshold,
-    )
+    # # Object Detection (TS )
+    # # -----------------------------
+    # object_detection(
+    #     ts_path=ts_path,
+    #     output_path=output_path,
+    #     confidence_threshold=confidence_threshold,
+    # )

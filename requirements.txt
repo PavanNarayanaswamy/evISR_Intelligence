@@ -1,2 +1,9 @@
 minio
 confluent-kafka
+zenml 
+zenml[server]
+kafka-python
+jpype1
+cv
+rfdetr
+supervision
