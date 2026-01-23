@@ -1,5 +1,7 @@
+
 import json
 import argparse
+from utils import config
 from kafka import KafkaConsumer, TopicPartition
 from kafka import KafkaConsumer, TopicPartition, KafkaAdminClient
 from kafka.admin import NewTopic
@@ -7,6 +9,9 @@ from kafka.errors import TopicAlreadyExistsError
 import os
 import sys
 import time
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -22,12 +27,10 @@ def ensure_topics_exist():
             bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
             client_id='klv-metadata-admin'
         )
-        
         existing_topics = admin_client.list_topics()
         topics_to_create = []
-        
         if config.KAFKA_TOPIC_INPUT not in existing_topics:
-            print(f"Creating input topic: {config.KAFKA_TOPIC_INPUT}")
+            logger.info(f"Creating input topic: {config.KAFKA_TOPIC_INPUT}")
             topics_to_create.append(
                 NewTopic(
                     name=config.KAFKA_TOPIC_INPUT,
@@ -35,9 +38,8 @@ def ensure_topics_exist():
                     replication_factor=1
                 )
             )
-        
         if config.KAFKA_TOPIC_OUTPUT not in existing_topics:
-            print(f"Creating output topic: {config.KAFKA_TOPIC_OUTPUT}")
+            logger.info(f"Creating output topic: {config.KAFKA_TOPIC_OUTPUT}")
             topics_to_create.append(
                 NewTopic(
                     name=config.KAFKA_TOPIC_OUTPUT,
@@ -45,18 +47,16 @@ def ensure_topics_exist():
                     replication_factor=1
                 )
             )
-        
         if topics_to_create:
             admin_client.create_topics(topics_to_create)
-            print(f"Created {len(topics_to_create)} topic(s)")
+            logger.info(f"Created {len(topics_to_create)} topic(s)")
         else:
-            print("All required topics already exist")
-            
+            logger.info("All required topics already exist")
     except TopicAlreadyExistsError:
-        print("Topics already exist")
+        logger.info("Topics already exist")
     except Exception as e:
-        print(f"Warning: Could not create topics: {e}")
-        print("Make sure Kafka is running and accessible")
+        logger.warning(f"Could not create topics: {e}")
+        logger.warning("Make sure Kafka is running and accessible")
     finally:
         if 'admin_client' in locals():
             admin_client.close()
@@ -72,7 +72,9 @@ def process_historical_events():
         consumer_timeout_ms=3000,  # stop when exhausted
     )
 
-    print("[KAFKA] Processing ALL historical events...")
+
+    logger.info("[KAFKA] Processing ALL historical events...")
+
 
     processed = 0
 
@@ -82,12 +84,15 @@ def process_historical_events():
         if not event.get("has_klv", False):
             continue
 
-        print(f"[KAFKA] Triggering pipeline for {event['clip_id']}")
-        trigger_pipeline(event)
+        logger.info(f"[KAFKA] Triggering pipeline for {event['clip_id']}")
+        try:
+            trigger_pipeline(event)
+        except Exception as e:
+            logger.error(f"Pipeline trigger failed for {event['clip_id']}: {e}")
         processed += 1
 
     consumer.close()
-    print(f"[KAFKA] Done. Total processed: {processed}")
+    logger.info(f"[KAFKA] Done. Total processed: {processed}")
 
 
 
@@ -114,7 +119,7 @@ def main():
             enable_auto_commit=True,
         )
 
-        print("[KAFKA] Listening for new clip events (live mode)...")
+        logger.info("[KAFKA] Listening for new clip events (live mode)...")
 
         for message in consumer:
             event = message.value
@@ -122,8 +127,11 @@ def main():
             if not event.get("has_klv", False):
                 continue
 
-            print(f"[KAFKA] Triggering pipeline for {event['clip_id']}")
-            trigger_pipeline(event)
+            logger.info(f"[KAFKA] Triggering pipeline for {event['clip_id']}")
+            try:
+                trigger_pipeline(event)
+            except Exception as e:
+                logger.error(f"Pipeline trigger failed for {event['clip_id']}: {e}")
 
 
 if __name__ == "__main__":

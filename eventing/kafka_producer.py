@@ -1,5 +1,9 @@
+
 import json
 from confluent_kafka import Producer
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class KafkaProducerClient:
     def __init__(self, bootstrap_servers: str):
@@ -7,9 +11,9 @@ class KafkaProducerClient:
 
     def _delivery_report(self, err, msg):
         if err is not None:
-            print(f"[KAFKA-PRODUCER] Delivery failed: {err}")
+            logger.error(f"[KAFKA-PRODUCER] Delivery failed: {err}")
         else:
-            print(
+            logger.info(
                 f"[KAFKA-PRODUCER] Delivered to {msg.topic()} "
                 f"[{msg.partition()}] offset={msg.offset()}"
             )

@@ -5,6 +5,9 @@ from .steps import (
     decode_metadata_step,
     object_detection,
 )
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 @pipeline(enable_cache=False)
 def isr_pipeline(
@@ -15,7 +18,10 @@ def isr_pipeline(
     output_path: str,
     confidence_threshold: float = 0.4,
 ):
+    logger.info(f"Pipeline started for clip_id: {clip_id}")
+
     ts_path = download_clip_step(clip_id, clip_uri)
+    logger.info(f"Downloaded clip for clip_id: {clip_id}")
 
     # Extract Metadata (KLV )
     # -----------------------------
@@ -24,6 +30,7 @@ def isr_pipeline(
         clip_id=clip_id,
         output_bucket=output_bucket,
     )
+    logger.info(f"Extracted metadata for clip_id: {clip_id}")
 
     # Decode Metadata (KLV )
     # -----------------------------
@@ -34,6 +41,7 @@ def isr_pipeline(
         clip_id=clip_id,
         output_bucket=output_bucket,
     )
+    logger.info(f"Decoded metadata for clip_id: {clip_id}")
 
     # # Object Detection (TS )
     # # -----------------------------
@@ -42,3 +50,6 @@ def isr_pipeline(
     #     output_path=output_path,
     #     confidence_threshold=confidence_threshold,
     # )
+    # logger.info(f"Object detection completed for clip_id: {clip_id}")
+
+    logger.info(f"Pipeline completed for clip_id: {clip_id}")

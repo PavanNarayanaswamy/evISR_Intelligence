@@ -3,6 +3,9 @@ import supervision as sv
 from rfdetr import RFDETRBase
 from rfdetr.util.coco_classes import COCO_CLASSES
 import torch
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 class ObjectTracker:
     def __init__(
@@ -16,7 +19,7 @@ class ObjectTracker:
         self.confidence_threshold = confidence_threshold
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {self.device.upper()}")
+        logger.info(f"Using device: {self.device.upper()}")
 
         self.model = None
         self.cap = None
@@ -33,8 +36,10 @@ class ObjectTracker:
     # Stream Setup
     # ------------------------------------------------------
     def setup_stream(self):
+
         self.cap = cv2.VideoCapture(self.video_path, cv2.CAP_FFMPEG)
         if not self.cap.isOpened():
+            logger.error("❌ Could not open TS file")
             raise RuntimeError("❌ Could not open TS file")
 
         fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -104,11 +109,11 @@ class ObjectTracker:
     # Main Processing Loop
     # ------------------------------------------------------
     def run(self):
-        print("🚀 Starting RTSP stream processing...")
+        logger.info("🚀 Starting RTSP stream processing...")
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                print("⚠️ RTSP stream ended or frame drop")
+                logger.warning("⚠️ RTSP stream ended or frame drop")
                 break
 
             annotated_frame = self.process_frame(frame)
@@ -117,6 +122,7 @@ class ObjectTracker:
             cv2.imshow("Stream", annotated_frame)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
+                logger.info("Stream interrupted by user (q pressed)")
                 break
 
         self.cleanup()
@@ -131,4 +137,4 @@ class ObjectTracker:
             self.writer.release()
 
         cv2.destroyAllWindows()
-        print("🎉 RTSP stream processing completed")
+        logger.info("🎉 RTSP stream processing completed")
