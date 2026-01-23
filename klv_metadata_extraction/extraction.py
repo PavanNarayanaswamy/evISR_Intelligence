@@ -2,7 +2,7 @@
 import subprocess
 from pathlib import Path
 from minio import Minio
- 
+import datetime 
  
 class Extraction:
     """
@@ -61,7 +61,13 @@ class Extraction:
         print(f"✅ Extracted {klv_file.stat().st_size:,} bytes of KLV data")
  
         # Upload to MinIO
-        object_name = f"{clip_id}.klv"
+        now = datetime.datetime.now()  # local time
+
+        object_name = (
+            f"extraction/"
+            f"{now.strftime('%Y/%m/%d/%H')}/"
+            f"{clip_id}.klv"
+        )
         self.minio.fput_object(
             self.output_bucket,
             object_name,

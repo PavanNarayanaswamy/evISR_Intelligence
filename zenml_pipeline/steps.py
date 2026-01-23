@@ -2,6 +2,7 @@ from zenml import step
 from pathlib import Path
 import json
 import os
+import datetime
 
 from .minio_utils import download_clip, upload_output, get_minio_client,download_klv
 from klv_metadata_extraction.decoding import JmisbDecoder
@@ -71,14 +72,19 @@ def decode_metadata_step(
 
         with open(output_json, "w") as f:
             json.dump(decoded, f, indent=2)
-
+        now = datetime.datetime.now()  # local time
+        object_name = (
+            f"decoding/"
+            f"{now.strftime('%Y/%m/%d/%H')}/"
+            f"{clip_id}.json"
+        )
         upload_output(
             output_bucket,
-            f"{clip_id}.json",
+            object_name,
             output_json,
         )
 
-        return f"minio://{output_bucket}/{clip_id}.json"
+        return f"minio://{output_bucket}/{object_name}"
 
     finally:
         # CLEANUP
