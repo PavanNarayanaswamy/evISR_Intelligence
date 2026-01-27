@@ -126,7 +126,7 @@ def object_detection(
     hit_counter_max: int,
     initialization_delay: int,
     distance_function: str,
-) -> None:
+) -> str:
     """
     ZenML step for object detection + tracking .
     All components are explicitly constructed here.
@@ -167,7 +167,7 @@ def object_detection(
     # ------------------------------
     # DEV / DEBUG MODE (OPT-IN)
     # ------------------------------
-    obj_tracker.save_mp4(
+    minio_path= obj_tracker.save_mp4(
         save_frames=True
     )
 
@@ -177,4 +177,5 @@ def object_detection(
     # for frame, tracked, idx in obj_tracker.run():
     #     pass  # Kafka / alerts / metrics
     logger.info(f"Starting object detection for {ts_path}")
+    return minio_path
     

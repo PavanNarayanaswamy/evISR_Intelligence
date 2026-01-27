@@ -34,7 +34,7 @@ def ensure_topics_exist():
             topics_to_create.append(
                 NewTopic(
                     name=config.KAFKA_TOPIC_INPUT,
-                    num_partitions=3,  # Adjust as needed
+                    num_partitions=1,  # Adjust as needed
                     replication_factor=1
                 )
             )
@@ -43,7 +43,7 @@ def ensure_topics_exist():
             topics_to_create.append(
                 NewTopic(
                     name=config.KAFKA_TOPIC_OUTPUT,
-                    num_partitions=3,  # Adjust as needed
+                    num_partitions=1,  # Adjust as needed
                     replication_factor=1
                 )
             )

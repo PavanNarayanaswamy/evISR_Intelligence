@@ -1,6 +1,6 @@
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 KAFKA_TOPIC_INPUT = "videoclips"
-KAFKA_TOPIC_OUTPUT = "klv.metadata.extracted"
+KAFKA_TOPIC_OUTPUT = "pipeline-results"
 KAFKA_GROUP_ID = "klv-metadata-consumer"
 
 MINIO_ENDPOINT = "localhost:9000"

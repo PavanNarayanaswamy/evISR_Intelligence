@@ -75,7 +75,7 @@ class ObjectTracker:
             "video_metadata": {},
             "frames": {},
         }
-
+        self.out_path=None
         # ----------------------------
         # Ensure MinIO bucket exists
         # ----------------------------
@@ -161,6 +161,7 @@ class ObjectTracker:
         # Cleanup local artifacts
         # ----------------------------
         shutil.rmtree(self.output_path, ignore_errors=True)
+        return f"minio://{self.output_bucket_detection}/{object_name}"
 
     # ======================================================
     # Core processing engine 
@@ -206,7 +207,8 @@ class ObjectTracker:
 
         finally:
             # Guaranteed cleanup even if consumer breaks early
-            self.close_video()
+            path= self.close_video()
+            self.out_path=path
 
     # ======================================================
     # Serialization helpers
@@ -269,3 +271,4 @@ class ObjectTracker:
             writer.write(frame)
 
         writer.release()
+        return self.out_path

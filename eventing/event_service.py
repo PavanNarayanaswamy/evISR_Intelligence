@@ -12,6 +12,7 @@ from utils import config
 from eventing.kafka_admin import KafkaAdmin
 from eventing.kafka_producer import KafkaProducerClient
 from utils.logger import get_logger
+from utils.event_logger import append_event_to_file
 
 logger = get_logger(__name__)
 
@@ -183,7 +184,7 @@ class EventingService:
                 logger.error(f"Failed to publish event for {event['clip_id']}: {e}", exc_info=True)
                 continue
 
-            self.append_event_log(event)
+            append_event_to_file(event, self.events_log_file)
 
             logger.debug(f"Event appended and state updated for: {event['clip_id']}")
 
