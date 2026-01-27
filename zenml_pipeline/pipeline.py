@@ -15,8 +15,13 @@ def isr_pipeline(
     clip_uri: str,
     jars: list[str],
     output_bucket: str,
+    output_bucket_detection: str,
     output_path: str,
-    confidence_threshold: float = 0.4,
+    confidence_threshold: float,
+    distance_threshold: int,
+    hit_counter_max: int,
+    initialization_delay: int,
+    distance_function: str,
 ):
     logger.info(f"Pipeline started for clip_id: {clip_id}")
 
@@ -43,13 +48,17 @@ def isr_pipeline(
     )
     logger.info(f"Decoded metadata for clip_id: {clip_id}")
 
-    # # Object Detection (TS )
-    # # -----------------------------
-    # object_detection(
-    #     ts_path=ts_path,
-    #     output_path=output_path,
-    #     confidence_threshold=confidence_threshold,
-    # )
-    # logger.info(f"Object detection completed for clip_id: {clip_id}")
-
+    # Object Detection (TS )
+    # -----------------------------
+    object_detection(
+        clip_id=clip_id,
+        ts_path=ts_path,
+        output_bucket_detection=output_bucket_detection,
+        output_path=output_path,
+        confidence_threshold=confidence_threshold,
+        distance_threshold=distance_threshold,
+        hit_counter_max=hit_counter_max,
+        initialization_delay=initialization_delay,
+        distance_function=distance_function,
+    )
     logger.info(f"Pipeline completed for clip_id: {clip_id}")

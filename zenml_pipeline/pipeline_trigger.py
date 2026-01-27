@@ -40,8 +40,13 @@ def trigger_pipeline(event: dict):
             clip_uri=event["clip_uri"],
             jars=JARS,
             output_bucket=config.OUTPUT_BUCKET,
+            output_bucket_detection=config.OUTPUT_BUCKET_DETECTION,
             output_path=f"output/{event['clip_id']}.mp4",
-            confidence_threshold=0.4,
+            confidence_threshold=config.CONFIDENCE_THRESHOLD,
+            distance_threshold=config.DISTANCE_THRESHOLD,
+            hit_counter_max=config.HIT_COUNTER_MAX,
+            initialization_delay=config.INITIALIZATION_DELAY,
+            distance_function=config.DISTANCE_FUNCTION,
         ).run()
 
         output_uri = None

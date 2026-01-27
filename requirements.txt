@@ -8,3 +8,4 @@ cv
 rfdetr
 supervision
 ffmpeg-python
+norfair

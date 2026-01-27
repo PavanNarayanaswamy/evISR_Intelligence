@@ -7,7 +7,9 @@ import datetime
 from .minio_utils import download_clip, upload_output, get_minio_client, download_klv
 from klv_metadata_extraction.decoding import JmisbDecoder
 from klv_metadata_extraction.extraction import Extraction
-from object_detection.global_tracking import ObjectTracker
+from object_detection.object_tracker import ObjectTracker
+from cv_models.rf_detr import RFDetrDetector
+from tracker.norfair_tracker import NorfairTrackerAnnotator
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -110,21 +112,69 @@ def decode_metadata_step(
                 except Exception as ce:
                     logger.error(f"Error cleaning up {path} for clip_id: {clip_id}: {ce}", exc_info=True)
 
+# --------------------------------------------------
+# Object Detection STEP
+# --------------------------------------------------
 @step(enable_cache=False)
-def object_detection(ts_path: str, output_path: str, confidence_threshold: float,) -> None:
+def object_detection(
+    clip_id: str,
+    ts_path: str,
+    output_bucket_detection :str,
+    output_path: str,
+    confidence_threshold: float,
+    distance_threshold: int,
+    hit_counter_max: int,
+    initialization_delay: int,
+    distance_function: str,
+) -> None:
     """
-    Run the full RTSP tracking job.
-    Live resources must stay inside ONE step.
+    ZenML step for object detection + tracking .
+    All components are explicitly constructed here.
     """
     logger.info(f"Starting object detection for {ts_path}")
-    tracker = ObjectTracker(
-        video_path=ts_path,
-        output_path=output_path,
-        confidence_threshold=confidence_threshold,
+    # ------------------------------
+    # RF-DETR MODEL
+    # ------------------------------
+    detector = RFDetrDetector(confidence_threshold)
+
+    # ------------------------------
+    # TRACKING METHOD 
+    # ------------------------------
+    #tracker_algo = ByteTrackerAnnotator()
+    tracker_algo = NorfairTrackerAnnotator(
+        distance_function=distance_function,
+        distance_threshold=distance_threshold,
+        hit_counter_max=hit_counter_max,
+        initialization_delay=initialization_delay,
     )
-    tracker.load_model()
-    tracker.setup_stream()
-    tracker.setup_tracking()
-    tracker.run()
-    tracker.cleanup()
-    logger.info(f"Object detection completed for {ts_path}")
+
+    # ------------------------------
+    # Orchestrator
+    # ------------------------------
+    obj_tracker = ObjectTracker(
+        clip_id=clip_id,
+        minio_client=get_minio_client(),
+        video_path=ts_path,
+        detector=detector,
+        tracker=tracker_algo,
+        output_bucket_detection=output_bucket_detection,
+        output_path=output_path,
+    )
+
+    # Explicit lifecycle
+    obj_tracker.open_video()
+
+    # ------------------------------
+    # DEV / DEBUG MODE (OPT-IN)
+    # ------------------------------
+    obj_tracker.save_mp4(
+        save_frames=True
+    )
+
+    # ------------------------------
+    # PRODUCTION MODE 
+    # ------------------------------
+    # for frame, tracked, idx in obj_tracker.run():
+    #     pass  # Kafka / alerts / metrics
+    logger.info(f"Starting object detection for {ts_path}")
+    
