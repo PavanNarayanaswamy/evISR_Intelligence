@@ -59,6 +59,7 @@ def trigger_pipeline(event: dict):
             jars=JARS,
             output_bucket=config.OUTPUT_BUCKET,
             output_bucket_detection=config.OUTPUT_BUCKET_DETECTION,
+            output_bucket_fusion=config.OUTPUT_BUCKET_FUSION,
             output_path=f"output/{event['clip_id']}.mp4",
             confidence_threshold=config.CONFIDENCE_THRESHOLD,
             distance_threshold=config.DISTANCE_THRESHOLD,
@@ -70,6 +71,7 @@ def trigger_pipeline(event: dict):
         extraction_uri = None
         decoding_uri = None
         detection_uri = None
+        fusion_uri = None
 
 
         for step_name, step_output in pipeline_run.steps.items():
@@ -78,12 +80,14 @@ def trigger_pipeline(event: dict):
                     # Get the actual artifact value
                     artifact_value = get_artifact_value(step_output.output)
                     
-                    if step_name == "decode_metadata_step":
+                    if step_name == "decode_metadata":
                         decoding_uri = artifact_value
-                    elif step_name == "extract_metadata_step":
+                    elif step_name == "extract_metadata":
                         extraction_uri = artifact_value
                     elif step_name == "object_detection":
                         detection_uri = artifact_value
+                    elif step_name == "fusion_context":
+                        fusion_uri = artifact_value
                         
                     logger.info(f"[PIPELINE] Step {step_name} output: {artifact_value}")
             except Exception as e:
@@ -114,6 +118,7 @@ def trigger_pipeline(event: dict):
             "klv_extraction_uri": extraction_uri,
             "klv_decoding_uri": decoding_uri,
             "object_detection_uri": detection_uri,
+            "fusion_uri": fusion_uri,
             "status": "success",
             "processed_at": datetime.datetime.now().isoformat()
         }
@@ -132,7 +137,6 @@ def trigger_pipeline(event: dict):
             "clip_uri": event["clip_uri"],
             "status": "error",
             "error": str(e),
-            "timestamp": event.get("timestamp", ""),
             "processed_at": datetime.datetime.now().isoformat()
         }
 

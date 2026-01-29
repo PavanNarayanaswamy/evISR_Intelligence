@@ -4,6 +4,7 @@ from pathlib import Path
 from minio import Minio
 import datetime
 from utils.logger import get_logger
+from zenml_pipeline.minio_utils import upload_output
 
 logger = get_logger(__name__)
 
@@ -22,12 +23,6 @@ class Extraction:
         self.output_bucket = output_bucket
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
-
-        if not self.minio.bucket_exists(output_bucket):
-            self.minio.make_bucket(output_bucket)
-            logger.info(f"Created bucket: {output_bucket}")
-        else:
-            logger.info(f"Bucket already exists: {output_bucket}")
 
     def extract_klv(self, ts_path: str | Path, clip_id: str) -> str:
         """
@@ -76,16 +71,12 @@ class Extraction:
             f"{now.strftime('%Y/%m/%d/%H')}/"
             f"{clip_id}.klv"
         )
-        try:
-            self.minio.fput_object(
-                self.output_bucket,
-                object_name,
-                str(klv_file),
-            )
-            logger.info(f"Uploaded to: minio://{self.output_bucket}/{object_name}")
-        except Exception as e:
-            logger.error(f"Failed to upload {klv_file} to MinIO: {e}", exc_info=True)
-            raise
+
+        upload_output(
+            bucket=self.output_bucket,
+            object_name=object_name,
+            file_path=klv_file,
+        )
 
         # Cleanup
         try:

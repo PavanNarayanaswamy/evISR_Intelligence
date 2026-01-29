@@ -3,14 +3,17 @@ from pathlib import Path
 import json
 import os
 import datetime
+import subprocess
+import math
 
-from .minio_utils import download_clip, upload_output, get_minio_client, download_klv
+from .minio_utils import download_segment, upload_output, get_minio_client, download_file
 from klv_metadata_extraction.decoding import JmisbDecoder
 from klv_metadata_extraction.extraction import Extraction
 from object_detection.object_tracker import ObjectTracker
 from cv_models.rf_detr import RFDetrDetector
 from tracker.norfair_tracker import NorfairTrackerAnnotator
 from utils.logger import get_logger
+from fusion_context.fusion import TemporalFusion
 
 logger = get_logger(__name__)
 
@@ -18,22 +21,33 @@ logger = get_logger(__name__)
 # DOWNLOAD STEP
 # -------------------------------------------------
 @step
-def download_clip_step(clip_id: str, clip_uri: str) -> str:
+def download_clip(clip_id: str, clip_uri: str) -> tuple[str, float]:
     """
     Downloads TS from MinIO as ./<clip_id>.ts
     """
     ts_path = Path.cwd() / f"{clip_id}.ts"
     logger.info(f"Downloading clip for clip_id: {clip_id} from {clip_uri}")
-    download_clip(clip_uri, ts_path)
+    download_segment(clip_uri, ts_path)
     logger.info(f"Downloaded clip to {ts_path}")
-    return str(ts_path)
+    result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                ts_path
+            ],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    return str(ts_path),float(result.stdout.strip())
 
 
 # -------------------------------------------------
 # EXTRACT KLV STEP
 # -------------------------------------------------
 @step
-def extract_metadata_step(
+def extract_metadata(
     ts_path: str,
     clip_id: str,
     output_bucket: str,
@@ -60,7 +74,7 @@ def extract_metadata_step(
 # DECODE + UPLOAD + CLEANUP STEP
 # -------------------------------------------------
 @step
-def decode_metadata_step(
+def decode_metadata(
     klv_path: str,          # s3://bucket/file.klv
     jars: list[str],
     clip_id: str,
@@ -74,7 +88,7 @@ def decode_metadata_step(
     try:
         logger.info(f"Decoding KLV metadata for clip_id: {clip_id}")
         # DOWNLOAD FROM MINIO
-        download_klv(klv_path, local_klv)
+        download_file(klv_path, local_klv)
 
         decoder = JmisbDecoder(jars)
         decoder.start_jvm()
@@ -178,4 +192,84 @@ def object_detection(
     #     pass  # Kafka / alerts / metrics
     logger.info(f"Starting object detection for {ts_path}")
     return minio_path
-    
+
+@step(enable_cache=False)
+def fusion_context(
+    clip_id: str,
+    video_duration: float,
+    klv_json_uri: str,
+    det_json_uri: str,
+    output_bucket: str,
+) -> str:
+    """
+    Downloads decoded KLV JSON and detection JSON,
+    performs temporal fusion,
+    uploads fusion output to MinIO,
+    cleans up local files.
+    """
+
+    logger.info(f"Starting fusion for clip_id: {clip_id}")
+    local_klv = Path("/tmp") / f"{clip_id}_klv.json"
+    local_det = Path("/tmp") / f"{clip_id}_det.json"
+    fusion_output_path = Path("/tmp") / f"{clip_id}_fusion.json"
+
+    try:
+        logger.info("Downloading KLV JSON from MinIO")
+        download_file(klv_json_uri, local_klv)
+
+        logger.info("Downloading detection JSON from MinIO")
+        download_file(det_json_uri, local_det)
+        with open(local_klv, "r") as f:
+            klv_json = json.load(f)
+
+        with open(local_det, "r") as f:
+            det_json = json.load(f)
+
+        segment_duration_sec = math.ceil(video_duration)
+
+        fusion_output = TemporalFusion.fuse_klv_and_detections(
+            clip_id=clip_id,
+            klv_json=klv_json,
+            det_json=det_json,
+            segment_duration_sec=segment_duration_sec,
+        )
+        with open(fusion_output_path, "w") as f:
+            json.dump(fusion_output, f, indent=2)
+
+        now = datetime.datetime.now()
+        object_name = (
+            f"fusion/"
+            f"{now.strftime('%Y/%m/%d/%H')}/"
+            f"{clip_id}.json"
+        )
+
+        upload_output(
+            bucket=output_bucket,
+            object_name=object_name,
+            file_path=fusion_output_path,
+        )
+
+        logger.info(
+            f"Fusion output uploaded for clip_id {clip_id} to {object_name}"
+        )
+
+        return f"minio://{output_bucket}/{object_name}"
+
+    except Exception as e:
+        logger.error(
+            f"Fusion failed for clip_id {clip_id}: {e}",
+            exc_info=True
+        )
+        raise
+
+    finally:
+        for path in [local_klv, local_det, fusion_output_path]:
+            if path.exists():
+                try:
+                    os.remove(path)
+                    logger.debug(f"Removed temporary file: {path}")
+                except Exception as ce:
+                    logger.warning(
+                        f"Failed to remove {path}: {ce}",
+                        exc_info=True
+                    )

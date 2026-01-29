@@ -11,6 +11,7 @@ MINIO_SECURE = False
 RAW_BUCKET = "raw-streaming-video"
 OUTPUT_BUCKET = "klv-metadata"
 OUTPUT_BUCKET_DETECTION="object-detection"
+OUTPUT_BUCKET_FUSION="fusion-context"
 
 CONFIDENCE_THRESHOLD = 0.4
 DISTANCE_THRESHOLD= 30

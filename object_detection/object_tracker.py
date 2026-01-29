@@ -7,6 +7,7 @@ from typing import Generator, Tuple, Any
 
 from minio import Minio
 from rfdetr.util.coco_classes import COCO_CLASSES
+from zenml_pipeline.minio_utils import upload_output
 
 
 class ObjectTracker:
@@ -76,12 +77,6 @@ class ObjectTracker:
             "frames": {},
         }
         self.out_path=None
-        # ----------------------------
-        # Ensure MinIO bucket exists
-        # ----------------------------
-        if self.output_bucket_detection:
-            if not self.minio.bucket_exists(self.output_bucket_detection):
-                self.minio.make_bucket(self.output_bucket_detection)
 
     # ======================================================
     # Video lifecycle management
@@ -149,13 +144,11 @@ class ObjectTracker:
             f"{now.strftime('%Y/%m/%d/%H')}/"
             f"{self.clip_id}.json"
         )
-
-        if self.output_bucket_detection:
-            self.minio.fput_object(
-                self.output_bucket_detection,
-                object_name,
-                json_path,
-            )
+        upload_output(
+            bucket=self.output_bucket_detection,
+            object_name=object_name,
+            file_path=json_path,
+        )
 
         # ----------------------------
         # Cleanup local artifacts

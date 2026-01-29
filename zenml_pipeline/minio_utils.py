@@ -42,7 +42,7 @@ def parse_minio_uri(uri: str):
     return parsed.netloc, parsed.path.lstrip("/")
 
 
-def download_clip(clip_uri: str, local_path: Path):
+def download_segment(clip_uri: str, local_path: Path):
     logger.info(f"Downloading clip from {clip_uri} to {local_path}")
     client = get_minio_client()
     bucket, object_name = parse_minio_uri(clip_uri)
@@ -60,19 +60,28 @@ def download_clip(clip_uri: str, local_path: Path):
         logger.error(f"Failed to download clip {object_name}: {e}", exc_info=True)
 
 
-def download_klv(s3_uri: str, local_path: Path):
-    logger.info(f"Downloading KLV from {s3_uri} to {local_path}")
-    parsed = urlparse(s3_uri)
+def download_file(s3_uri: str, local_path: Path):
+    """
+    Download any file from MinIO/S3 to a local path.
+    Works for KLV, JSON, MP4, etc.
+    """
+    logger.info(f"Downloading file from {s3_uri} to {local_path}")
 
+    parsed = urlparse(s3_uri)
     bucket = parsed.netloc
     object_name = parsed.path.lstrip("/")
 
     client = get_minio_client()
+
     try:
         client.fget_object(bucket, object_name, str(local_path))
-        logger.info(f"Successfully downloaded KLV: {object_name}")
+        logger.info(f"Successfully downloaded: {object_name}")
     except Exception as e:
-        logger.error(f"Failed to download KLV {object_name}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to download {object_name} from bucket {bucket}: {e}",
+            exc_info=True
+        )
+        raise
 
 
 def upload_output(bucket: str, object_name: str, file_path: Path):
