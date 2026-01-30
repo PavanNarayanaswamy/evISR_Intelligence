@@ -12,3 +12,4 @@ norfair
 reverse_geocoder
 pytoony
 openscenesense_ollama
+langgraph

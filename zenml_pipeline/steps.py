@@ -18,6 +18,10 @@ from fusion_context.semantic_fusion import SemanticFusion
 from video_summary.summary_gen import VideoLLMSummarizer
 from utils import config
 
+from agents.klv.agent import klv_graph
+from typing import Tuple
+from typing_extensions import Annotated
+
 logger = get_logger(__name__)
 
 class CompactListEncoder(json.JSONEncoder):
@@ -55,6 +59,7 @@ def download_clip(clip_id: str, clip_uri: str) -> tuple[str, float]:
 # -------------------------------------------------
 # EXTRACT KLV STEP
 # -------------------------------------------------
+'''
 @step
 def extract_metadata(
     ts_path: str,
@@ -134,6 +139,26 @@ def decode_metadata(
                     logger.debug(f"Removed temporary file: {path}")
                 except Exception as ce:
                     logger.error(f"Error cleaning up {path} for clip_id: {clip_id}: {ce}", exc_info=True)
+'''
+
+@step
+def klv_agent_step(
+    ts_path: str,
+    clip_id: str,
+    jars: list[str],
+    output_bucket: str,
+) -> Tuple[
+    Annotated[str, "klv_extraction_uri"],
+    Annotated[str, "klv_decoding_uri"],
+]:
+    out = klv_graph.invoke({  # invoke is the standard compiled-graph call.
+        "ts_path": ts_path,
+        "clip_id": clip_id,
+        "jars": jars,
+        "output_bucket": output_bucket,
+    })
+    # Returning a tuple literal => ZenML treats as multiple output artifacts.
+    return out["extraction_uri"], out["decoding_uri"]
 
 # --------------------------------------------------
 # Object Detection STEP

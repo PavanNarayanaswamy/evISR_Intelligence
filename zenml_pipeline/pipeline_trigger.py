@@ -84,11 +84,22 @@ def trigger_pipeline(event: dict):
             try:
                 if step_output.output is not None:
                     artifact_value = get_artifact_value(step_output.output)
-
-                    if step_name == "decode_metadata":
-                        decoding_uri = artifact_value
-                    elif step_name == "extract_metadata":
-                        extraction_uri = artifact_value
+                    
+                    # if step_name == "decode_metadata":
+                    #     decoding_uri = artifact_value
+                    # elif step_name == "extract_metadata":
+                    #     extraction_uri = artifact_value
+                    if step_name == "klv_agent_step":
+                        # In many ZenML versions, multiple outputs are accessible via .outputs or dict-like.
+                        # Try dict-style first:
+                        try:
+                            extraction_uri = get_artifact_value(step_output.output["klv_extraction_uri"])
+                            decoding_uri = get_artifact_value(step_output.output["klv_decoding_uri"])
+                        except Exception:
+                            # Fallback: if ZenML returns a tuple-like single artifact, load it then unpack
+                            val = get_artifact_value(step_output.output)
+                            if isinstance(val, (tuple, list)) and len(val) == 2:
+                                extraction_uri, decoding_uri = val
                     elif step_name == "object_detection":
                         detection_uri = artifact_value
                     elif step_name == "fusion_context":
