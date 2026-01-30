@@ -23,6 +23,9 @@ VIDEO_CLIP_FILE = "embedded.ts"
 # Each clip chunk duration (seconds)
 VIDEO_CLIP_SEGMENT_SECONDS = 30
 
+# Stream liveness
+STREAM_IDLE_TIMEOUT_SECONDS = 60  # stream considered dead if no data for 60s
+
 # MinIO bucket for offline clips
 VIDEO_CLIP_BUCKET = "raw-video-clips"
 
