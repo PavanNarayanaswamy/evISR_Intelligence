@@ -1,11 +1,11 @@
 from zenml import pipeline
 from .steps import (
     download_clip,
-    extract_metadata,
-    decode_metadata,
+    klv_agent_step,
     object_detection,
     fusion_context
 )
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,24 +32,34 @@ def isr_pipeline(
 
     # Extract Metadata (KLV )
     # -----------------------------
-    klv_path = extract_metadata(
-        ts_path=ts_path,
-        clip_id=clip_id,
-        output_bucket=output_bucket,
-    )
-    logger.info(f"Extracted metadata for clip_id: {clip_id}")
+    # klv_path = extract_metadata(
+    #     ts_path=ts_path,
+    #     clip_id=clip_id,
+    #     output_bucket=output_bucket,
+    # )
+    # logger.info(f"Extracted metadata for clip_id: {clip_id}")
 
     # Decode Metadata (KLV )
     # -----------------------------
-    dec_json= decode_metadata(
+    # decode_metadata(
+    #     ts_path=ts_path,
+    #     klv_path=klv_path,
+    #     jars=jars,
+    #     clip_id=clip_id,
+    #     output_bucket=output_bucket,
+    # )
+    # logger.info(f"Decoded metadata for clip_id: {clip_id}")
+    # KLV Agent (extract + decode)
+    # -----------------------------
+    klv_extraction_uri, klv_decoding_uri = klv_agent_step(
         ts_path=ts_path,
-        klv_path=klv_path,
-        jars=jars,
         clip_id=clip_id,
+        jars=jars,
         output_bucket=output_bucket,
     )
-    logger.info(f"Decoded metadata for clip_id: {clip_id}")
-
+    logger.info(f"KLV extraction uri: {klv_extraction_uri}")
+    logger.info(f"KLV decoding uri: {klv_decoding_uri}")
+    
     # Object Detection (TS )
     # -----------------------------
     obj_json= object_detection(
