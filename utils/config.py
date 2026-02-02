@@ -42,3 +42,6 @@ KAFKA_TOPIC = "videoclips"
 # Polling
 POLL_INTERVAL_SECONDS = 3
 STATE_FILE = "state.json"
+
+# DETECTION OUTPUT VIDEO
+SAVE_MP4= False   #False for PRODUCTION USE 

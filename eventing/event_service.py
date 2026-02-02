@@ -141,7 +141,7 @@ class EventingService:
         try:
             objects = self.minio_client.list_objects(
                 bucket,
-                prefix=f"{stream_id}/",
+                prefix=f"port-",
                 recursive=True
             )
         except Exception as e:

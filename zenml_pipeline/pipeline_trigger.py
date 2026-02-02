@@ -60,7 +60,7 @@ def trigger_pipeline(event: dict):
             output_bucket=config.OUTPUT_BUCKET,
             output_bucket_detection=config.OUTPUT_BUCKET_DETECTION,
             output_bucket_fusion=config.OUTPUT_BUCKET_FUSION,
-            output_path=f"output/{event['clip_id']}.mp4",
+            output_path=config.OUTPUT_PATH,  
             confidence_threshold=config.CONFIDENCE_THRESHOLD,
             distance_threshold=config.DISTANCE_THRESHOLD,
             hit_counter_max=config.HIT_COUNTER_MAX,

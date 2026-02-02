@@ -14,6 +14,7 @@ from cv_models.rf_detr import RFDetrDetector
 from tracker.norfair_tracker import NorfairTrackerAnnotator
 from utils.logger import get_logger
 from fusion_context.fusion import TemporalFusion
+from utils import config
 
 logger = get_logger(__name__)
 
@@ -165,7 +166,7 @@ def object_detection(
     # ------------------------------
     # Orchestrator
     # ------------------------------
-    obj_tracker = ObjectTracker(
+    tracker = ObjectTracker(
         clip_id=clip_id,
         minio_client=get_minio_client(),
         video_path=ts_path,
@@ -174,24 +175,12 @@ def object_detection(
         output_bucket_detection=output_bucket_detection,
         output_path=output_path,
     )
+    tracker.start(enable_mp4=config.SAVE_MP4)
+    tracker.process()
+    det_json_uri = tracker.write_outputs()
+    tracker.cleanup()
 
-    # Explicit lifecycle
-    obj_tracker.open_video()
-
-    # ------------------------------
-    # DEV / DEBUG MODE (OPT-IN)
-    # ------------------------------
-    minio_path= obj_tracker.save_mp4(
-        save_frames=True
-    )
-
-    # ------------------------------
-    # PRODUCTION MODE 
-    # ------------------------------
-    # for frame, tracked, idx in obj_tracker.run():
-    #     pass  # Kafka / alerts / metrics
-    logger.info(f"Starting object detection for {ts_path}")
-    return minio_path
+    return det_json_uri
 
 @step(enable_cache=False)
 def fusion_context(
