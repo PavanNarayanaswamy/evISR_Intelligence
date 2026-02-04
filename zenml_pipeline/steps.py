@@ -21,6 +21,7 @@ from utils import config
 from agents.klv.agent import klv_graph
 from typing import Tuple
 from typing_extensions import Annotated
+from agents.detection.agent import detection_graph
 
 logger = get_logger(__name__)
 
@@ -163,6 +164,7 @@ def klv_agent_step(
 # --------------------------------------------------
 # Object Detection STEP
 # --------------------------------------------------
+'''
 @step(enable_cache=False)
 def object_detection(
     clip_id: str,
@@ -213,8 +215,44 @@ def object_detection(
     det_json_uri,fps = tracker.write_outputs()
     tracker.cleanup()
 
-    return det_json_uri,fps
+    return det_json_uri
+'''
+@step(enable_cache=False)
+def object_detection(
+    clip_id: str,
+    ts_path: str,
+    output_bucket_detection: str,
+    output_path: str,
+    confidence_threshold: float,
+    distance_threshold: int,
+    hit_counter_max: int,
+    initialization_delay: int,
+    distance_function: str,
+) -> str:
+    """
+    ZenML step = execution boundary.
+    Real logic lives in detection agent (LangGraph).
+    """
+    logger.info(f"[ZENML] Object detection step clip_id={clip_id} ts_path={ts_path}")
 
+    out = detection_graph.invoke({  # invoke is the compiled-graph run API. [web:13]
+        "clip_id": clip_id,
+        "ts_path": ts_path,
+        "output_bucket_detection": output_bucket_detection,
+        "output_path": output_path,
+        "confidence_threshold": confidence_threshold,
+        "distance_threshold": distance_threshold,
+        "hit_counter_max": hit_counter_max,
+        "initialization_delay": initialization_delay,
+        "distance_function": distance_function,
+        "save_mp4": bool(getattr(config, "SAVE_MP4", False)),
+    })
+
+    return out["det_json_uri"]
+
+# --------------------------------------------------
+# FUSION STEP
+# --------------------------------------------------
 @step(enable_cache=False)
 def fusion_context(
     clip_id: str,
