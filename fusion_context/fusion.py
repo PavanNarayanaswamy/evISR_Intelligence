@@ -41,7 +41,7 @@ class TemporalFusion:
         anchor_time: float,
         max_buffer: float = 0.5,
         step: float = 0.1,
-        max_frames: int = 2
+        max_frames: int = 1
     ) -> List[Dict[str, Any]]:
         """
         Find up to max_frames detection frames near anchor_time.
@@ -144,7 +144,7 @@ class TemporalFusion:
                 anchor_time=det_anchor,
                 max_buffer=0.9,
                 step=0.1,
-                max_frames=2
+                max_frames=1
             )
 
             detections = []

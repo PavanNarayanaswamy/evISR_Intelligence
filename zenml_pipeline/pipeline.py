@@ -4,7 +4,9 @@ from .steps import (
     extract_metadata,
     decode_metadata,
     object_detection,
-    fusion_context
+    fusion_context,
+    llm_summary
+
 )
 from utils.logger import get_logger
 
@@ -18,6 +20,7 @@ def isr_pipeline(
     output_bucket: str,
     output_bucket_detection: str,
     output_bucket_fusion: str,
+    output_bucket_summary: str,
     output_path: str,
     confidence_threshold: float,
     distance_threshold: int,
@@ -52,7 +55,7 @@ def isr_pipeline(
 
     # Object Detection (TS )
     # -----------------------------
-    obj_json= object_detection(
+    obj_json = object_detection(
         clip_id=clip_id,
         ts_path=ts_path,
         output_bucket_detection=output_bucket_detection,
@@ -67,7 +70,7 @@ def isr_pipeline(
 
     # Fusion Context (TS + KLV + Detections)
     # -----------------------------
-    fusion_context(
+    fusion_json = fusion_context(
         clip_id=clip_id,
         video_duration=video_duration,
         klv_json_uri=dec_json,
@@ -75,3 +78,13 @@ def isr_pipeline(
         output_bucket=output_bucket_fusion,
     )
     logger.info(f"Fusion context completed for clip_id: {clip_id}")
+    # LLM Video Summary (TS + Fusion Context)
+    # -----------------------------
+    summary_uri = llm_summary(
+        clip_id=clip_id,
+        ts_path=ts_path,
+        fusion_json_uri=fusion_json,
+        output_bucket=output_bucket_summary,
+        model="qwen3-vl:30b",
+    )
+    logger.info(f"LLM summary completed for clip_id: {clip_id}")

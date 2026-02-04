@@ -14,6 +14,7 @@ from cv_models.rf_detr import RFDetrDetector
 from tracker.norfair_tracker import NorfairTrackerAnnotator
 from utils.logger import get_logger
 from fusion_context.fusion import TemporalFusion
+from video_summary.summary_gen import VideoLLMSummarizer
 from utils import config
 
 logger = get_logger(__name__)
@@ -41,7 +42,7 @@ def download_clip(clip_id: str, clip_uri: str) -> tuple[str, float]:
             text=True,
             check=True
         )
-    return str(ts_path),float(result.stdout.strip())
+    return str(ts_path), float(result.stdout.strip())
 
 
 # -------------------------------------------------
@@ -119,7 +120,7 @@ def decode_metadata(
 
     finally:
         # CLEANUP
-        for path in [ts_path, local_klv, output_json]:
+        for path in [local_klv, output_json]:
             if Path(path).exists():
                 try:
                     os.remove(path)
@@ -262,3 +263,80 @@ def fusion_context(
                         f"Failed to remove {path}: {ce}",
                         exc_info=True
                     )
+
+@step(enable_cache=False)
+def llm_summary(
+    clip_id: str,
+    ts_path: str,
+    fusion_json_uri: str,
+    output_bucket: str,
+    model: str = "qwen3-vl:30b",
+) -> str:
+    """
+    Generates LLM-based video summary using:
+    - fusion-selected frames (1 per second)
+    - fusion-context JSON
+    """
+
+    local_fusion = Path("/tmp") / f"{clip_id}_fusion.json"
+    frames_dir = Path("/tmp") / f"{clip_id}_llm_frames"
+    summary_path = Path("/tmp") / f"{clip_id}_summary.txt"
+
+    try:
+        # -------------------------------------------------
+        # Download fusion JSON
+        # -------------------------------------------------
+        logger.info(f"Downloading fusion JSON for clip_id: {clip_id}")
+        download_file(fusion_json_uri, local_fusion)
+
+        with open(local_fusion, "r") as f:
+            fusion_context = json.load(f)
+
+        logger.info("Extracting fusion-aligned frames for LLM")
+
+
+        # -------------------------------------------------
+        # Run LLM summarization
+        # -------------------------------------------------
+        logger.info(f"Running LLM summarization using model: {model}")
+        summary = VideoLLMSummarizer.summarize(
+            fusion_context=fusion_context,
+            model=model,
+            video_path=ts_path,
+        )
+
+        summary_path.write_text(summary)
+
+        # -------------------------------------------------
+        # Upload summary
+        # -------------------------------------------------
+        now = datetime.datetime.now()
+        object_name = (
+            f"summary/"
+            f"{now.strftime('%Y/%m/%d/%H')}/"
+            f"{clip_id}.txt"
+        )
+
+        upload_output(
+            bucket=output_bucket,
+            object_name=object_name,
+            file_path=summary_path,
+        )
+
+        logger.info(
+            f"LLM summary uploaded for clip_id {clip_id} to {object_name}"
+        )
+
+        return f"minio://{output_bucket}/{object_name}"
+
+    finally:
+        # -------------------------------------------------
+        # Cleanup
+        # -------------------------------------------------
+        for path in [local_fusion, summary_path, ts_path]:
+            path = Path(path) 
+            if path.exists():
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass

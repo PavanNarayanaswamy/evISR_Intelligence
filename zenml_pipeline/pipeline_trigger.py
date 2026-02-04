@@ -60,6 +60,7 @@ def trigger_pipeline(event: dict):
             output_bucket=config.OUTPUT_BUCKET,
             output_bucket_detection=config.OUTPUT_BUCKET_DETECTION,
             output_bucket_fusion=config.OUTPUT_BUCKET_FUSION,
+            output_bucket_summary=config.OUTPUT_BUCKET_SUMMARY,
             output_path=config.OUTPUT_PATH,  
             confidence_threshold=config.CONFIDENCE_THRESHOLD,
             distance_threshold=config.DISTANCE_THRESHOLD,
@@ -72,14 +73,18 @@ def trigger_pipeline(event: dict):
         decoding_uri = None
         detection_uri = None
         fusion_uri = None
+        summary_uri = None
 
 
         for step_name, step_output in pipeline_run.steps.items():
+            #Skip multi-output steps we don't care about
+            if step_name == "download_clip":
+                continue
+
             try:
                 if step_output.output is not None:
-                    # Get the actual artifact value
                     artifact_value = get_artifact_value(step_output.output)
-                    
+
                     if step_name == "decode_metadata":
                         decoding_uri = artifact_value
                     elif step_name == "extract_metadata":
@@ -88,10 +93,14 @@ def trigger_pipeline(event: dict):
                         detection_uri = artifact_value
                     elif step_name == "fusion_context":
                         fusion_uri = artifact_value
-                        
+                    elif step_name == "llm_summary":
+                        summary_uri = artifact_value
+
                     logger.info(f"[PIPELINE] Step {step_name} output: {artifact_value}")
+
             except Exception as e:
                 logger.error(f"[PIPELINE] Error getting output from step {step_name}: {e}")
+
 
 
         if extraction_uri is None:
@@ -111,6 +120,17 @@ def trigger_pipeline(event: dict):
                 f"[PIPELINE] object_detection step did not produce output "
                 f"for clip {event['clip_id']}"
             )
+        if fusion_uri is None:
+            logger.warning(
+                f"[PIPELINE] fusion_context step did not produce output "
+                f"for clip {event['clip_id']}"
+            )
+        if summary_uri is None:
+            logger.warning(
+                f"[PIPELINE] llm_summary step did not produce output "
+                f"for clip {event['clip_id']}"
+            )
+
 
         output_event = {
             "clip_id": event["clip_id"],
@@ -119,6 +139,7 @@ def trigger_pipeline(event: dict):
             "klv_decoding_uri": decoding_uri,
             "object_detection_uri": detection_uri,
             "fusion_uri": fusion_uri,
+            "summary_uri": summary_uri,
             "status": "success",
             "processed_at": datetime.datetime.now().isoformat()
         }
