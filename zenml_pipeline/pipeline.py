@@ -1,10 +1,10 @@
 from zenml import pipeline
 from .steps import (
     download_clip,
-    klv_agent_step,
-    object_detection,
-    fusion_context,
-    llm_summary
+    klv_extraction_agent,
+    object_detection_agent,
+    fusion_context_agent,
+    llm_summary_agent
 
 )
 
@@ -54,7 +54,7 @@ def isr_pipeline(
     # logger.info(f"Decoded metadata for clip_id: {clip_id}")
     # KLV Agent (extract + decode)
     # -----------------------------
-    klv_extraction_uri, klv_decoding_uri = klv_agent_step(
+    klv_extraction_uri, klv_decoding_uri = klv_extraction_agent(
         ts_path=ts_path,
         clip_id=clip_id,
         jars=jars,
@@ -65,7 +65,7 @@ def isr_pipeline(
     
     # Object Detection (TS )
     # -----------------------------
-    obj_json,fps = object_detection(
+    obj_json,fps = object_detection_agent(
         clip_id=clip_id,
         ts_path=ts_path,
         output_bucket_detection=output_bucket_detection,
@@ -80,7 +80,7 @@ def isr_pipeline(
 
     # Fusion Context (TS + KLV + Detections)
     # -----------------------------
-    fusion_json = fusion_context(
+    fusion_json = fusion_context_agent(
         clip_id=clip_id,
         video_duration=video_duration,
         klv_json_uri=klv_decoding_uri,
@@ -91,7 +91,7 @@ def isr_pipeline(
     logger.info(f"Fusion context completed for clip_id: {clip_id}")
     # LLM Video Summary (TS + Fusion Context)
     # -----------------------------
-    summary_uri = llm_summary(
+    summary_uri = llm_summary_agent(
         clip_id=clip_id,
         ts_path=ts_path,
         fusion_json_uri=fusion_json,

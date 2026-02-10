@@ -18,7 +18,7 @@ def heartbeat_loop():
 threading.Thread(target=heartbeat_loop, daemon=True).start()
 
 
-VIDEO_FILE = "Truck.ts"
+VIDEO_FILE = "embedded.ts"
 UDP_URL = "udp://127.0.0.1:5000?pkt_size=1316"
 
 print("Starting FFmpeg MPEG-TS UDP stream...")

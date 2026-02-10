@@ -18,10 +18,14 @@ from fusion_context.semantic_fusion import SemanticFusion
 from video_summary.summary_gen import VideoLLMSummarizer
 from utils import config
 
-from agents.klv.agent import klv_graph
 from typing import Tuple
 from typing_extensions import Annotated
+
+#Agent Wrapper Imports
+from agents.klv.agent import klv_graph
 from agents.detection.agent import detection_graph
+from agents.fusion.agent import fusion_graph
+from agents.summary.agent import llm_summary_graph
 
 logger = get_logger(__name__)
 
@@ -143,7 +147,7 @@ def decode_metadata(
 '''
 
 @step
-def klv_agent_step(
+def klv_extraction_agent(
     ts_path: str,
     clip_id: str,
     jars: list[str],
@@ -218,7 +222,7 @@ def object_detection(
     return det_json_uri
 '''
 @step(enable_cache=False)
-def object_detection(
+def object_detection_agent(
     clip_id: str,
     ts_path: str,
     output_bucket_detection: str,
@@ -235,7 +239,7 @@ def object_detection(
     """
     logger.info(f"[ZENML] Object detection step clip_id={clip_id} ts_path={ts_path}")
 
-    out = detection_graph.invoke({  # invoke is the compiled-graph run API. [web:13]
+    out = detection_graph.invoke({
         "clip_id": clip_id,
         "ts_path": ts_path,
         "output_bucket_detection": output_bucket_detection,
@@ -253,6 +257,7 @@ def object_detection(
 # --------------------------------------------------
 # FUSION STEP
 # --------------------------------------------------
+'''
 @step(enable_cache=False)
 def fusion_context(
     clip_id: str,
@@ -376,8 +381,38 @@ def fusion_context(
                         f"Failed to remove {path}: {ce}",
                         exc_info=True
                     )
+'''
+@step(enable_cache=False)
+def fusion_context_agent(
+    clip_id: str,
+    video_duration: float,
+    klv_json_uri: str,
+    det_json_uri: str,
+    output_bucket: str,
+) -> str:
+    """
+    ZenML step boundary for context fusion.
+    Actual fusion logic runs inside the fusion agent (LangGraph).
+    """
+    logger.info(
+        f"[ZENML] Fusion context step clip_id={clip_id} "
+        f"klv_json_uri={klv_json_uri} det_json_uri={det_json_uri}"
+    )
 
+    out = fusion_graph.invoke({
+        "clip_id": clip_id,
+        "video_duration": video_duration,
+        "klv_json_uri": klv_json_uri,
+        "det_json_uri": det_json_uri,
+        "output_bucket": output_bucket,
+    })
 
+    return out["fusion_uri"]
+
+# --------------------------------------------------
+# LLM SUMMARY STEP
+# --------------------------------------------------
+'''
 @step(enable_cache=False)
 def llm_summary(
     clip_id: str,
@@ -454,3 +489,30 @@ def llm_summary(
                     os.remove(path)
                 except Exception:
                     pass
+'''
+@step(enable_cache=False)
+def llm_summary_agent(
+    clip_id: str,
+    ts_path: str,
+    fusion_json_uri: str,
+    output_bucket: str,
+    model: str = "qwen3-vl:30b",
+) -> str:
+    """
+    ZenML step boundary for LLM video summary.
+    Actual summarization runs inside the LLM summary agent.
+    """
+    logger.info(
+        f"[ZENML] LLM summary step clip_id={clip_id} "
+        f"fusion_json_uri={fusion_json_uri} model={model}"
+    )
+
+    out = llm_summary_graph.invoke({
+        "clip_id": clip_id,
+        "ts_path": ts_path,
+        "fusion_json_uri": fusion_json_uri,
+        "output_bucket": output_bucket,
+        "model": model,
+    })
+
+    return out["summary_uri"]

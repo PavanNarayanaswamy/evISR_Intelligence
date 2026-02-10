@@ -89,7 +89,7 @@ def trigger_pipeline(event: dict):
                     #     decoding_uri = artifact_value
                     # elif step_name == "extract_metadata":
                     #     extraction_uri = artifact_value
-                    if step_name == "klv_agent_step":
+                    if step_name == "klv_extraction_agent":
                         # In many ZenML versions, multiple outputs are accessible via .outputs or dict-like.
                         # Try dict-style first:
                         try:
@@ -100,11 +100,11 @@ def trigger_pipeline(event: dict):
                             val = get_artifact_value(step_output.output)
                             if isinstance(val, (tuple, list)) and len(val) == 2:
                                 extraction_uri, decoding_uri = val
-                    elif step_name == "object_detection":
+                    elif step_name == "object_detection_agent":
                         detection_uri = artifact_value
-                    elif step_name == "fusion_context":
+                    elif step_name == "fusion_context_agent":
                         fusion_uri = artifact_value
-                    elif step_name == "llm_summary":
+                    elif step_name == "llm_summary_agent":
                         summary_uri = artifact_value
 
                     logger.info(f"[PIPELINE] Step {step_name} output: {artifact_value}")
