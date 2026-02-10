@@ -116,6 +116,17 @@ class TemporalFusion:
                     "geo": geo
                 })
 
+        for track in tracks.values():
+            track["observations"].sort(key=lambda o: o["frame_index"])
+
+        # -----------------------------
+        # NEW: Sort tracks by track_id
+        # -----------------------------
+        sorted_tracks = sorted(
+            tracks.values(),
+            key=lambda t: t["track_id"]
+        )
+
         return {
-            "tracks": list(tracks.values())
+            "tracks": sorted_tracks
         }

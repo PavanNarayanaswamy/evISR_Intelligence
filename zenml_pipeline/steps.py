@@ -14,6 +14,7 @@ from cv_models.rf_detr import RFDetrDetector
 from tracker.norfair_tracker import NorfairTrackerAnnotator
 from utils.logger import get_logger
 from fusion_context.fusion import TemporalFusion
+from fusion_context.semantic_fusion import SemanticFusion
 from video_summary.summary_gen import VideoLLMSummarizer
 from utils import config
 
@@ -192,16 +193,18 @@ def fusion_context(
     output_bucket: str,
 ) -> str:
     """
-    Downloads decoded KLV JSON and detection JSON,
-    performs temporal fusion,
-    uploads fusion output to MinIO,
-    cleans up local files.
+    Performs:
+    1. Temporal fusion → raw fusion output
+    2. Semantic fusion → semantic geo output
+    Uploads both to MinIO.
     """
 
     logger.info(f"Starting fusion for clip_id: {clip_id}")
+
     local_klv = Path("/tmp") / f"{clip_id}_klv.json"
     local_det = Path("/tmp") / f"{clip_id}_det.json"
-    fusion_output_path = Path("/tmp") / f"{clip_id}_fusion.json"
+    raw_fusion_path = Path("/tmp") / f"{clip_id}_fusion.json"
+    semantic_fusion_path = Path("/tmp") / f"{clip_id}_semantic.json"
 
     try:
         logger.info("Downloading KLV JSON from MinIO")
@@ -209,39 +212,68 @@ def fusion_context(
 
         logger.info("Downloading detection JSON from MinIO")
         download_file(det_json_uri, local_det)
+
         with open(local_klv, "r") as f:
             klv_json = json.load(f)
 
         with open(local_det, "r") as f:
             det_json = json.load(f)
 
+        # -----------------------------
+        # RAW FUSION
+        # -----------------------------
         klv_time_window = 0.5
+
         fusion_output = TemporalFusion.fuse_klv_and_detections(
             klv_json=klv_json,
             det_json=det_json,
             klv_time_window=klv_time_window,
         )
-        with open(fusion_output_path, "w") as f:
+
+        with open(raw_fusion_path, "w") as f:
             json.dump(fusion_output, f, indent=2)
 
         now = datetime.datetime.now()
-        object_name = (
-            f"fusion/"
+
+        raw_object_name = (
+            f"raw_fusion/"
             f"{now.strftime('%Y/%m/%d/%H')}/"
             f"{clip_id}.json"
         )
 
         upload_output(
             bucket=output_bucket,
-            object_name=object_name,
-            file_path=fusion_output_path,
+            object_name=raw_object_name,
+            file_path=raw_fusion_path,
         )
 
-        logger.info(
-            f"Fusion output uploaded for clip_id {clip_id} to {object_name}"
+        logger.info(f"Raw fusion uploaded → {raw_object_name}")
+
+        # -----------------------------
+        # SEMANTIC FUSION
+        # -----------------------------
+        semantic_output = SemanticFusion.build_semantic_geo(
+            fusion_output
         )
 
-        return f"minio://{output_bucket}/{object_name}"
+        with open(semantic_fusion_path, "w") as f:
+            json.dump(semantic_output, f, indent=2)
+
+        semantic_object_name = (
+            f"semantic_fusion/"
+            f"{now.strftime('%Y/%m/%d/%H')}/"
+            f"{clip_id}.json"
+        )
+
+        upload_output(
+            bucket=output_bucket,
+            object_name=semantic_object_name,
+            file_path=semantic_fusion_path,
+        )
+
+        logger.info(f"Semantic fusion uploaded → {semantic_object_name}")
+
+        return f"minio://{output_bucket}/{semantic_object_name}"
 
     except Exception as e:
         logger.error(
@@ -251,7 +283,12 @@ def fusion_context(
         raise
 
     finally:
-        for path in [local_klv, local_det, fusion_output_path]:
+        for path in [
+            local_klv,
+            local_det,
+            raw_fusion_path,
+            semantic_fusion_path,
+        ]:
             if path.exists():
                 try:
                     os.remove(path)
@@ -261,6 +298,7 @@ def fusion_context(
                         f"Failed to remove {path}: {ce}",
                         exc_info=True
                     )
+
 
 @step(enable_cache=False)
 def llm_summary(
