@@ -20,6 +20,12 @@ from utils import config
 
 logger = get_logger(__name__)
 
+class CompactListEncoder(json.JSONEncoder):
+    def encode(self, obj):
+        if isinstance(obj, list):
+            return "[" + ", ".join(self.encode(x) for x in obj) + "]"
+        return json.JSONEncoder.encode(self, obj)
+    
 # -------------------------------------------------
 # DOWNLOAD STEP
 # -------------------------------------------------
@@ -252,12 +258,18 @@ def fusion_context(
         # -----------------------------
         # SEMANTIC FUSION
         # -----------------------------
-        semantic_output = SemanticFusion.build_semantic_geo(
-            fusion_output
+        semantic_output = SemanticFusion.build_semantic_fusion(
+            raw_fusion_output=fusion_output
         )
 
         with open(semantic_fusion_path, "w") as f:
-            json.dump(semantic_output, f, indent=2)
+            json.dump(
+                semantic_output,
+                f,
+                cls=CompactListEncoder,
+                indent=2,
+                ensure_ascii=False
+            )
 
         semantic_object_name = (
             f"semantic_fusion/"

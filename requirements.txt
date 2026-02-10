@@ -9,3 +9,6 @@ rfdetr==1.3.0
 supervision
 ffmpeg-python
 norfair
+reverse_geocoder
+pytoony
+openscenesense_ollama
