@@ -215,13 +215,11 @@ def fusion_context(
         with open(local_det, "r") as f:
             det_json = json.load(f)
 
-        segment_duration_sec = math.ceil(video_duration)
-
+        klv_time_window = 0.5
         fusion_output = TemporalFusion.fuse_klv_and_detections(
-            clip_id=clip_id,
             klv_json=klv_json,
             det_json=det_json,
-            segment_duration_sec=segment_duration_sec,
+            klv_time_window=klv_time_window,
         )
         with open(fusion_output_path, "w") as f:
             json.dump(fusion_output, f, indent=2)
@@ -301,7 +299,7 @@ def llm_summary(
         logger.info(f"Running LLM summarization using model: {model}")
         summary = VideoLLMSummarizer.summarize(
             fusion_context=fusion_context,
-            model=model,
+            # model=model,
             video_path=ts_path,
         )
 

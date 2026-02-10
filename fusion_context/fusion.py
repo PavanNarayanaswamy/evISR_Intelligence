@@ -1,12 +1,10 @@
-import json
-import math
-import subprocess
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 class TemporalFusion:
     """
-    Per-second, time-anchored fusion of KLV telemetry and object detections.
+    Track-centric fusion of KLV telemetry and object detections.
+    Each track contains time-ordered observations with nearest KLV geo data.
     """
 
     # -----------------------------
@@ -18,54 +16,13 @@ class TemporalFusion:
         return int(ts_micro) / 1_000_000
 
     @staticmethod
-    def get_video_duration_sec(video_path: str) -> float:
-        """
-        Get duration of a video segment using ffprobe.
-        """
-        result = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                video_path
-            ],
-            capture_output=True,
-            text=True,
-            check=True
+    def parse_float(value: str):
+        """Extract float from values like '41.0933°' or '2932.7m'"""
+        if value is None:
+            return None
+        return float(
+            value.replace("°", "").replace("m", "")
         )
-        return float(result.stdout.strip())
-
-    @staticmethod
-    def find_detection_frames_with_buffer(
-        frames: List[Dict[str, Any]],
-        anchor_time: float,
-        max_buffer: float = 0.5,
-        step: float = 0.1,
-        max_frames: int = 1
-    ) -> List[Dict[str, Any]]:
-        """
-        Find up to max_frames detection frames near anchor_time.
-        Only frames WITH objects are considered.
-        """
-        buffer = step
-
-        frames_with_objects = [f for f in frames if f["objects"]]
-
-        while buffer <= max_buffer:
-            candidates = [
-                f for f in frames_with_objects
-                if abs(f["relative_time_sec"] - anchor_time) <= buffer
-            ]
-
-            if candidates:
-                return sorted(
-                    candidates,
-                    key=lambda f: abs(f["relative_time_sec"] - anchor_time)
-                )[:max_frames]
-
-            buffer += step
-
-        return []
 
     # -----------------------------
     # Fusion Implementation
@@ -74,16 +31,14 @@ class TemporalFusion:
     @classmethod
     def fuse_klv_and_detections(
         cls,
-        clip_id: str,
         klv_json: Dict[str, Any],
         det_json: Dict[str, Any],
-        segment_duration_sec: int
+        klv_time_window: float = 0.5,
     ) -> Dict[str, Any]:
 
         # -----------------------------
         # Preprocess KLV packets
         # -----------------------------
-        klv_packets = []
         raw_packets = klv_json.get("packets", [])
         if not raw_packets:
             raise ValueError("No KLV packets found")
@@ -92,93 +47,75 @@ class TemporalFusion:
             raw_packets[0]["fields"]["PrecisionTimeStamp"]
         )
 
+        klv_packets = []
         for pkt in raw_packets:
             ts = pkt["fields"].get("PrecisionTimeStamp")
             if not ts:
                 continue
 
             rel_time = cls.klv_timestamp_to_seconds(ts) - t0
+            fields = pkt["fields"]
+
             klv_packets.append({
-                "packet_index": pkt.get("packet_index"),
-                "type": pkt.get("type"),
-                "relative_time_sec": round(rel_time, 6),
-                "fields": pkt["fields"]  # ALL KLV FIELDS PRESERVED
+                "time_sec": rel_time,
+                "geo": {
+                    "latitude": cls.parse_float(fields.get("SensorLatitude")),
+                    "longitude": cls.parse_float(fields.get("SensorLongitude")),
+                    "altitude": cls.parse_float(fields.get("SensorTrueAltitude")),
+                },
             })
 
         # -----------------------------
-        # Preprocess detection frames
+        # Preprocess detections into tracks
         # -----------------------------
         fps = det_json["video_metadata"]["fps"]
-        frames = []
+        frames = det_json.get("frames", {})
 
-        for frame_idx_str, frame_data in det_json.get("frames", {}).items():
+        tracks: Dict[int, Dict[str, Any]] = {}
+
+        for frame_idx_str, frame_data in frames.items():
             frame_idx = int(frame_idx_str)
             time_sec = frame_idx / fps
 
-            frames.append({
-                "frame_index": frame_idx,
-                "relative_time_sec": round(time_sec, 6),
-                "objects": frame_data.get("objects", [])
-            })
+            for obj in frame_data.get("objects", []):
+                track_id = obj["track_id"]
 
-        # -----------------------------
-        # Build per-second anchored fusion
-        # -----------------------------
-        fusion = []
+                if track_id not in tracks:
+                    tracks[track_id] = {
+                        "track_id": track_id,
+                        "label": obj["class_name"],
+                        "observations": []
+                    }
 
-        for sec in range(segment_duration_sec):
-            anchor_time = float(sec)
+                # ---- Find nearest KLV packet
+                nearest_klv = min(
+                    klv_packets,
+                    key=lambda k: abs(k["time_sec"] - time_sec),
+                    default=None
+                )
 
-            # ---- KLV closest to this second
-            klv = min(
-                klv_packets,
-                key=lambda k: abs(k["relative_time_sec"] - anchor_time),
-                default=None
-            )
+                geo = None
+                if nearest_klv and abs(nearest_klv["time_sec"] - time_sec) <= klv_time_window:
+                    geo = nearest_klv["geo"]
 
-            # ---- Detection anchor (KLV time preferred)
-            det_anchor = klv["relative_time_sec"] if klv else anchor_time
-
-            nearest_frames = cls.find_detection_frames_with_buffer(
-                frames=frames,
-                anchor_time=det_anchor,
-                max_buffer=0.9,
-                step=0.1,
-                max_frames=1
-            )
-
-            detections = []
-            for frame in nearest_frames:
-                for obj in frame["objects"]:
-                    detections.append({
-                        "frame_index": frame["frame_index"],
-                        "relative_time_sec": frame["relative_time_sec"],
-                        "track_id": obj["track_id"],
-                        "class_id": obj["class_id"],
-                        "class_name": obj["class_name"],
-                        "confidence": obj["confidence"],
-                        "bbox": obj["bbox"],
-                        "centroid": obj["centroid"],
-                        "relative_velocity": obj.get("relative_velocity", [0.0, 0.0]),
-                        "relative_speed": obj.get("relative_speed", 0.0),
-                        "absolute_velocity": obj.get("absolute_velocity", [0.0, 0.0]),
-                        "absolute_speed": obj.get("absolute_speed", 0.0),
-                        "track_age": obj.get("track_age", 0),
-                        "is_stationary": obj.get("is_stationary", False),
-                        "direction": obj.get("direction", "UNKNOWN"),
-                        "is_confirmed": obj.get("is_confirmed", False),
-                        "dwell_time_sec": obj.get("dwell_time_sec", 0.0),
-                    })
-
-            fusion.append({
-                "second": sec,
-                "anchor_time_sec": anchor_time,
-                "klv": klv,
-                "detections": detections
-            })
+                tracks[track_id]["observations"].append({
+                    "frame_index": frame_idx,
+                    "time_sec": round(time_sec, 6),
+                    "bbox": obj["bbox"],
+                    "confidence": obj["confidence"],
+                    "centroid": obj["centroid"],
+                    "absolute_velocity": obj.get("absolute_velocity", None),
+                    "absolute_speed": obj.get("absolute_speed", None),
+                    "relative_velocity": obj.get("relative_velocity", None),
+                    "relative_speed": obj.get("relative_speed", None),
+                    "track_age": obj.get("track_age", None),
+                    "dwell_time_sec": obj.get("dwell_time_sec", None),
+                    "is_stationary": obj.get("is_stationary", None),
+                    "direction": obj.get("direction", None),
+                    "is_confirmed": obj.get("is_confirmed", None),
+                    "geo": geo
+                })
 
         return {
-            "clip_id": clip_id,
-            "segment_duration_sec": segment_duration_sec,
-            "fusion": fusion
+            "tracks": list(tracks.values())
         }
