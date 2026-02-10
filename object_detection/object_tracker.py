@@ -206,15 +206,69 @@ class ObjectTracker:
             bbox = det.data["bbox"]
             class_id = det.data["class_id"]
 
+            # -------------------------------
+            # Time-based metrics
+            # -------------------------------
+            track_age = int(obj.age) if hasattr(obj, "age") else 0
+            dwell_time_sec = (
+                float(track_age / self.fps)
+                if self.fps and track_age > 0
+                else 0.0
+            )
+
             objects.append(
                 {
                     "track_id": int(obj.id),
                     "class_id": int(class_id),
                     "class_name": COCO_CLASSES[class_id],
                     "confidence": float(det.scores[0]),
+
+                    # -------------------------------
+                    # Spatial
+                    # -------------------------------
                     "bbox": [float(v) for v in bbox],
                     "centroid": [float(v) for v in det.points[0]],
+
+                    # -------------------------------
+                    # ABSOLUTE (camera-compensated)
+                    # -------------------------------
+                    "absolute_velocity": [
+                        float(obj.absolute_velocity[0]),
+                        float(obj.absolute_velocity[1]),
+                    ] if hasattr(obj, "absolute_velocity") else [0.0, 0.0],
+
+                    "absolute_speed": float(obj.absolute_speed)
+                    if hasattr(obj, "absolute_speed")
+                    else 0.0,
+
+                    # -------------------------------
+                    # RELATIVE (image-space)
+                    # -------------------------------
+                    "relative_velocity": [
+                        float(obj.relative_velocity[0]),
+                        float(obj.relative_velocity[1]),
+                    ] if hasattr(obj, "relative_velocity") else [0.0, 0.0],
+
+                    "relative_speed": float(obj.relative_speed)
+                    if hasattr(obj, "relative_speed")
+                    else 0.0,
+
+                    # -------------------------------
+                    # Semantics
+                    # -------------------------------
+                    "track_age": track_age,
+                    "dwell_time_sec": dwell_time_sec,
+                    "is_stationary": bool(obj.is_stationary)
+                    if hasattr(obj, "is_stationary")
+                    else False,
+                    "direction": str(obj.direction)
+                    if hasattr(obj, "direction")
+                    else "UNKNOWN",
+                    "is_confirmed": bool(obj.is_confirmed)
+                    if hasattr(obj, "is_confirmed")
+                    else False,
                 }
             )
 
         return {"objects": objects}
+

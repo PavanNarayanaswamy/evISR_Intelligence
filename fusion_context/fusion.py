@@ -158,7 +158,16 @@ class TemporalFusion:
                         "class_name": obj["class_name"],
                         "confidence": obj["confidence"],
                         "bbox": obj["bbox"],
-                        "centroid": obj["centroid"]
+                        "centroid": obj["centroid"],
+                        "relative_velocity": obj.get("relative_velocity", [0.0, 0.0]),
+                        "relative_speed": obj.get("relative_speed", 0.0),
+                        "absolute_velocity": obj.get("absolute_velocity", [0.0, 0.0]),
+                        "absolute_speed": obj.get("absolute_speed", 0.0),
+                        "track_age": obj.get("track_age", 0),
+                        "is_stationary": obj.get("is_stationary", False),
+                        "direction": obj.get("direction", "UNKNOWN"),
+                        "is_confirmed": obj.get("is_confirmed", False),
+                        "dwell_time_sec": obj.get("dwell_time_sec", 0.0),
                     })
 
             fusion.append({
