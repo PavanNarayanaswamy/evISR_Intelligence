@@ -89,10 +89,16 @@ def write_outputs_node(state: DetectionState) -> dict:
     clip_id = state["clip_id"]
 
     logger.info(f"[DETECTION_AGENT] Writing outputs clip_id={clip_id}")
-    det_json_uri = ot.write_outputs()
-    logger.info(f"[DETECTION_AGENT] Uploaded detection json clip_id={clip_id} uri={det_json_uri}")
+    det_json_uri, fps = ot.write_outputs()
+    logger.info(
+        f"[DETECTION_AGENT] Uploaded detection json clip_id={clip_id} "
+        f"uri={det_json_uri} fps={fps}"
+    )
 
-    return {"det_json_uri": det_json_uri}
+    return {
+        "det_json_uri": det_json_uri,
+        "fps": fps,
+    }
 
 
 def cleanup_node(state: DetectionState) -> dict:

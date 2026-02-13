@@ -9,6 +9,7 @@ from typing import Dict, Any
 
 from utils.logger import get_logger
 from fusion_context.fusion import TemporalFusion
+from fusion_context.semantic_fusion import SemanticFusion, CompactListEncoder
 from zenml_pipeline.minio_utils import download_file, upload_output
 
 from .state import FusionState
@@ -52,7 +53,8 @@ def load_and_fuse_node(state: FusionState) -> Dict[str, Any]:
 
     with open(local_det, "r") as f:
         det_json = json.load(f)
-
+    
+    klv_time_window = 0.5
     segment_duration_sec = int(math.ceil(state["video_duration"]))
     logger.info(
         f"[FUSION_AGENT] Running TemporalFusion clip_id={clip_id} "
@@ -60,59 +62,92 @@ def load_and_fuse_node(state: FusionState) -> Dict[str, Any]:
         f"klv_time_window={klv_time_window}"
     )
 
-    fusion_output = TemporalFusion.fuse_klv_and_detections(
+    raw_fusion = TemporalFusion.fuse_klv_and_detections(
         klv_json=klv_json,
         det_json=det_json,
         klv_time_window=klv_time_window,
     )
+    logger.info(f"[FUSION_AGENT] Raw fusion complete clip_id={clip_id}")
+    # Semantic fusion (uses fps + clip_id)
+    semantic_fusion = SemanticFusion.build_semantic_fusion(
+        raw_fusion_output=raw_fusion,
+        fps=state["fps"],
+        clip_id=clip_id,
+    )
+    logger.info(f"[FUSION_AGENT] Semantic fusion complete clip_id={clip_id}")
 
-    fusion_output_path = Path("/tmp") / f"{clip_id}_fusion.json"
-    with open(fusion_output_path, "w") as f:
-        json.dump(fusion_output, f, indent=2)
+    # Write both
+    raw_fusion_path = Path("/tmp") / f"{clip_id}_fusion.json"
+    semantic_fusion_path = Path("/tmp") / f"{clip_id}_semantic.json"
+    with open(raw_fusion_path, "w") as f:
+        json.dump(raw_fusion, f, indent=2)
 
-    logger.info(f"[FUSION_AGENT] Wrote fusion output to {fusion_output_path}")
+    with open(semantic_fusion_path, "w") as f:
+        json.dump(
+            semantic_fusion,
+            f,
+            cls=CompactListEncoder,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+    logger.info(f"[FUSION_AGENT] Wrote raw+semantic fusion for clip_id={clip_id}")
 
     return {
         "klv_json": klv_json,
         "det_json": det_json,
-        "local_fusion_path": str(fusion_output_path),
+        "raw_fusion": raw_fusion,
+        "semantic_fusion": semantic_fusion,
+        "raw_fusion_path": str(raw_fusion_path),
+        "semantic_fusion_path": str(semantic_fusion_path),
     }
 
 def upload_node(state: FusionState) -> Dict[str, Any]:
     """
-    Upload fusion JSON to MinIO and return minio:// URI.
+    Upload raw_fusion.json → raw_fusion/... and semantic_fusion.json → semantic_fusion/...
+    Return semantic URI (matching step behavior).
     """
     clip_id = state["clip_id"]
     output_bucket = state["output_bucket"]
-    fusion_output_path = Path(state["local_fusion_path"])
-
     now = datetime.datetime.now()
-    object_name = (
-        f"fusion/"
+
+    # Upload raw fusion
+    raw_path = Path(state["raw_fusion_path"])
+    raw_object_name = (
+        f"raw_fusion/"
         f"{now.strftime('%Y/%m/%d/%H')}/"
         f"{clip_id}.json"
     )
+    upload_output(
+        bucket=output_bucket,
+        object_name=raw_object_name,
+        file_path=raw_path,
+    )
+    logger.info(f"[FUSION_AGENT] Raw fusion uploaded → {raw_object_name}")
 
-    logger.info(
-        f"[FUSION_AGENT] Uploading fusion output clip_id={clip_id} "
-        f"to bucket={output_bucket}, object={object_name}"
+    # Upload semantic fusion
+    semantic_path = Path(state["semantic_fusion_path"])
+    semantic_object_name = (
+        f"semantic_fusion/"
+        f"{now.strftime('%Y/%m/%d/%H')}/"
+        f"{clip_id}.json"
     )
     upload_output(
         bucket=output_bucket,
-        object_name=object_name,
-        file_path=fusion_output_path,
+        object_name=semantic_object_name,
+        file_path=semantic_path,
     )
+    logger.info(f"[FUSION_AGENT] Semantic fusion uploaded → {semantic_object_name}")
 
-    fusion_uri = f"minio://{output_bucket}/{object_name}"
-    logger.info(f"[FUSION_AGENT] Fusion URI: {fusion_uri}")
-    return {"fusion_uri": fusion_uri}
+    semantic_uri = f"minio://{output_bucket}/{semantic_object_name}"
+    return {"fusion_uri": semantic_uri}
 
 
 def cleanup_node(state: FusionState) -> Dict[str, Any]:
     """
     Delete local temp files.
     """
-    for key in ("local_klv_path", "local_det_path", "local_fusion_path"):
+    for key in ("local_klv_path", "local_det_path", "raw_fusion_path", "semantic_fusion_path"):
         path_str = state.get(key)
         if not path_str:
             continue

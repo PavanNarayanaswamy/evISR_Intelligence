@@ -4,6 +4,7 @@ import math
 from collections import Counter
 import reverse_geocoder as rg
 import logging
+import json
 logger = logging.getLogger(__name__)
 
 class SemanticFusion:
@@ -334,3 +335,9 @@ class SemanticFusion:
             "scene_metrics": scene_metrics,
             "geo_context": geo_context,
         } 
+
+class CompactListEncoder(json.JSONEncoder):
+    def encode(self, obj):
+        if isinstance(obj, list):
+            return "[" + ", ".join(self.encode(x) for x in obj) + "]"
+        return json.JSONEncoder.encode(self, obj)

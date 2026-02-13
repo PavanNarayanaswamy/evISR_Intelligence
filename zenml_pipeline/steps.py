@@ -28,12 +28,6 @@ from agents.fusion.agent import fusion_graph
 from agents.summary.agent import llm_summary_graph
 
 logger = get_logger(__name__)
-
-class CompactListEncoder(json.JSONEncoder):
-    def encode(self, obj):
-        if isinstance(obj, list):
-            return "[" + ", ".join(self.encode(x) for x in obj) + "]"
-        return json.JSONEncoder.encode(self, obj)
     
 # -------------------------------------------------
 # DOWNLOAD STEP
@@ -232,7 +226,7 @@ def object_detection_agent(
     hit_counter_max: int,
     initialization_delay: int,
     distance_function: str,
-) -> str:
+) -> tuple[str, float]:
     """
     ZenML step = execution boundary.
     Real logic lives in detection agent (LangGraph).
@@ -252,7 +246,7 @@ def object_detection_agent(
         "save_mp4": bool(getattr(config, "SAVE_MP4", False)),
     })
 
-    return out["det_json_uri"]
+    return out["det_json_uri"], out["fps"]
 
 # --------------------------------------------------
 # FUSION STEP
@@ -389,6 +383,7 @@ def fusion_context_agent(
     klv_json_uri: str,
     det_json_uri: str,
     output_bucket: str,
+    fps: float,
 ) -> str:
     """
     ZenML step boundary for context fusion.
@@ -397,6 +392,7 @@ def fusion_context_agent(
     logger.info(
         f"[ZENML] Fusion context step clip_id={clip_id} "
         f"klv_json_uri={klv_json_uri} det_json_uri={det_json_uri}"
+        f"fps={fps}"
     )
 
     out = fusion_graph.invoke({
@@ -405,6 +401,7 @@ def fusion_context_agent(
         "klv_json_uri": klv_json_uri,
         "det_json_uri": det_json_uri,
         "output_bucket": output_bucket,
+        "fps": fps,
     })
 
     return out["fusion_uri"]

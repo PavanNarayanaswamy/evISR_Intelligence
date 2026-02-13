@@ -19,9 +19,9 @@ class DetectionState(TypedDict, total=False):
 
     # Outputs
     det_json_uri: str
+    fps: float
 
     # Internal debug info
-    fps: float
     width: int
     height: int
     
