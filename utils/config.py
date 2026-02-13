@@ -18,7 +18,7 @@ STREAMING_MINIO_BUCKET = "raw-streaming-video"
 STREAMING_STREAM_ID = "standalone-camera-01"
 
 # Offline Video Clip Ingest Configuration
-VIDEO_CLIP_FILE = "embedded.ts"
+VIDEO_CLIP_FILE = "Truck.ts"
 
 # Each clip chunk duration (seconds)
 VIDEO_CLIP_SEGMENT_SECONDS = 30
@@ -30,7 +30,7 @@ STREAM_IDLE_TIMEOUT_SECONDS = 60  # stream considered dead if no data for 60s
 VIDEO_CLIP_BUCKET = "raw-video-clips"
 
 # Stream / source identity for clip
-VIDEO_CLIP_STREAM_ID = "embedding-camera-01"
+VIDEO_CLIP_STREAM_ID = "port-Truck-test"
 
 # Temp directory for clip chunking
 VIDEO_CLIP_TMP_DIR = "/tmp/evisr_video_clips"

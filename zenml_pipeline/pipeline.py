@@ -55,7 +55,7 @@ def isr_pipeline(
 
     # Object Detection (TS )
     # -----------------------------
-    obj_json = object_detection(
+    obj_json,fps = object_detection(
         clip_id=clip_id,
         ts_path=ts_path,
         output_bucket_detection=output_bucket_detection,
@@ -76,6 +76,7 @@ def isr_pipeline(
         klv_json_uri=dec_json,
         det_json_uri=obj_json,
         output_bucket=output_bucket_fusion,
+        fps=fps,
     )
     logger.info(f"Fusion context completed for clip_id: {clip_id}")
     # LLM Video Summary (TS + Fusion Context)

@@ -153,7 +153,7 @@ class ObjectTracker:
 
             json_uri = f"minio://{self.output_bucket_detection}/{object_name}"
 
-        return json_uri
+        return json_uri, self.fps
 
 
 # --------------------------------------------------

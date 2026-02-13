@@ -1,6 +1,5 @@
 import cv2
-
-from rfdetr import RFDETRBase
+from rfdetr import RFDETRMedium
 from rfdetr.util.coco_classes import COCO_CLASSES
 import supervision as sv
 
@@ -35,7 +34,7 @@ class RFDetrDetector:
 
         # RF-DETR model initialization
         # Heavy operation, intentionally done once per process
-        self.model = RFDETRBase()
+        self.model = RFDETRMedium()
 
     def detect(self, frame):
         """

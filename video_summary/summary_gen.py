@@ -33,7 +33,7 @@ class VideoLLMSummarizer:
         return text.replace("{", "{{").replace("}", "}}")
 
     # -------------------------------------------------
-    # LLM Summary (Semantic Fusion Driven)
+    # LLM Summary
     # -------------------------------------------------
 
     @staticmethod
@@ -52,7 +52,7 @@ class VideoLLMSummarizer:
             raise ValueError("video_path must be provided")
 
         # -------------------------------------------------
-        # Convert semantic fusion directly to TOON
+        # Convert semantic fusion → TOON
         # -------------------------------------------------
         raw_toon = VideoLLMSummarizer.fusion_json_to_toon(fusion_context)
         toon_context = VideoLLMSummarizer.escape_for_format(raw_toon)
@@ -60,62 +60,78 @@ class VideoLLMSummarizer:
         logger.info(f"Semantic TOON Context:\n{toon_context}\n")
 
         # -------------------------------------------------
-        # ISR Prompt
+        # Prompt definition
+        # NOTE:
+        # {timeline} and {transcript} are injected later
+        # by OpenSceneSense analyzer
         # -------------------------------------------------
+        detailed_prompt_template = """
+        SYSTEM ROLE:
+        You are a senior ISR Intelligence Analyst tasked with producing a clear, Precise and concise operational
+        intelligence summary from surveillance video.
+
+        Use professional ISR-report language. Base conclusions only on Frame timeline and semantic scene context.
+        Avoid mentioning technical details such as detections, track IDs, JSON, TOON, frame numbers,
+        timestamps, coordinates, velocities, pixel values, or raw numeric data.
+
+        --------------------------------------------------
+        SEMANTIC SCENE CONTEXT
+        --------------------------------------------------
+        {toon_context}
+
+        --------------------------------------------------
+        FRAME TIMELINE
+        --------------------------------------------------
+        {{timeline}}
+
+        --------------------------------------------------
+        TASK
+        --------------------------------------------------
+
+        1. **Primary Activity:**
+           - Use FRAME TIMELINE to identify and summarize the main activities occurring in the video.
+           - Summarize the main activities observed in the scene.
+           - Focus on movement patterns, object interactions, direction of travel,
+             entry and exit behavior, and flow consistency.
+
+        2. **Geospatial Intelligence:**
+           - Describe the locations where activities occur using geo_events and geo_context information provided in semantic scene context.
+           - Indicate whether the activity is localized or spans multiple locations.
+           - Decode location using latitude/longitude only if exact location names are not provided in semantic scene context.
+
+        3. **Analyst Observations:**
+           - Use both FRAME TIMELINE and SEMANTIC SCENE CONTEXT to highlight key observations, anomalies, and patterns.
+           - Highlight motion consistency, persistence of objects, relative movement, and anomalies.
+           - Identify any unusual or unexpected behaviors.
+           - state anomalies if they are present, do not hallucinate anomalies if they are not present.
+
+        --------------------------------------------------
+        OUTPUT FORMAT (STRICT)
+        --------------------------------------------------
+
+        [Operational Activity Title]
+
+        Primary Activity:
+        - 3-5 sentences summarizing the main activities.
+
+        Geospatial Intelligence:
+        - 1-2 sentences describing the spatial context of the activity.
+
+        Analyst Observations:
+        - 2-4 sentences highlighting key observations and anomalies.
+        """
+
+        detailed_prompt = detailed_prompt_template.format(
+            toon_context=toon_context
+        )
+
         prompts = AnalysisPrompts(
             frame_analysis=(
-                "Analyze this frame as airborne ISR imagery. "
+                "Analyze this frame as surveillance imagery from a fixed monitoring camera. "
                 "Describe visible activity, movement, terrain, infrastructure, "
                 "and object appearance."
             ),
-
-            detailed_summary=f"""
-            SYSTEM ROLE:
-            You are a senior ISR Intelligence Analyst producing an operational
-            intelligence summary from airborne surveillance video.
-
-            Write clearly using ISR-report language.
-            Use only observable activity.
-            Do NOT mention detections, track IDs, JSON, models, or TOON.
-
-            --------------------------------------------------
-            SEMANTIC TRACK CONTEXT
-            --------------------------------------------------
-            {toon_context}
-
-            --------------------------------------------------
-            TASK
-            --------------------------------------------------
-
-            Primary Activity:
-            Describe the timeline of activity using frame analysis.
-            Focus on movement, interactions, persistence, and scene dynamics.
-
-            Geospatial Intelligence:
-            Use geo_summary information to describe where the activity occurs.
-
-            Analyst Observations:
-            Use visibility_summary, motion_summary, behavior_summary, loitering_summary, track_lifecycle_summary, confidence_summary
-            position_stability_summary, motion_intensity_summary, velocity_consistency_summary, 
-            relative_motion_summary, track_confirmation_summary to identify patterns,
-            persistence, or anomalies.
-
-            --------------------------------------------------
-            OUTPUT FORMAT (STRICT)
-            --------------------------------------------------
-
-            [Concise Summary Title]
-
-            Primary Activity:
-            3–5 sentences
-
-            Geospatial Intelligence:
-            Location and movement context
-
-            Analyst Observations:
-            Behavioral and motion insights
-            """,
-
+            detailed_summary=detailed_prompt,
             brief_summary=(
                 "Generate a concise ISR intelligence summary focusing on "
                 "primary activity and geospatial context."
@@ -130,7 +146,7 @@ class VideoLLMSummarizer:
             summary_model=model,
             host="http://localhost:11434",
             request_timeout=1000.0,
-            min_frames=10,
+            min_frames=15,
             max_frames=30,
             frames_per_minute=12,
             frame_selector=DynamicFrameSelector(),

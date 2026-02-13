@@ -149,7 +149,7 @@ def object_detection(
     hit_counter_max: int,
     initialization_delay: int,
     distance_function: str,
-) -> str:
+) -> tuple[str, float]:
     """
     ZenML step for object detection + tracking .
     All components are explicitly constructed here.
@@ -185,10 +185,10 @@ def object_detection(
     )
     tracker.start(enable_mp4=config.SAVE_MP4)
     tracker.process()
-    det_json_uri = tracker.write_outputs()
+    det_json_uri,fps = tracker.write_outputs()
     tracker.cleanup()
 
-    return det_json_uri
+    return det_json_uri,fps
 
 @step(enable_cache=False)
 def fusion_context(
@@ -197,6 +197,7 @@ def fusion_context(
     klv_json_uri: str,
     det_json_uri: str,
     output_bucket: str,
+    fps: float,
 ) -> str:
     """
     Performs:
@@ -259,7 +260,9 @@ def fusion_context(
         # SEMANTIC FUSION
         # -----------------------------
         semantic_output = SemanticFusion.build_semantic_fusion(
-            raw_fusion_output=fusion_output
+            raw_fusion_output=fusion_output,
+            fps=fps,
+            clip_id=clip_id,
         )
 
         with open(semantic_fusion_path, "w") as f:

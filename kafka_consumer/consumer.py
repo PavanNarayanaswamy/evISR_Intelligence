@@ -1,15 +1,15 @@
-
 import json
 import argparse
-from utils import config
-from kafka import KafkaConsumer, TopicPartition
-from kafka import KafkaConsumer, TopicPartition, KafkaAdminClient
-from kafka.admin import NewTopic
-from kafka.errors import TopicAlreadyExistsError
 import os
 import sys
 import time
+import threading
+from queue import Queue
+from kafka import KafkaConsumer, KafkaAdminClient
+from kafka.admin import NewTopic
+from kafka.errors import TopicAlreadyExistsError
 from utils.logger import get_logger
+import kafka_consumer.consumer_config as config
 
 logger = get_logger(__name__)
 
@@ -19,13 +19,43 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from zenml_pipeline.pipeline_trigger import trigger_pipeline
-import kafka_consumer.consumer_config as config
+
+# ==================================================
+# EVENT QUEUE
+# ==================================================
+event_queue = Queue()
+
+
+# ==================================================
+# PIPELINE WORKER (SEQUENTIAL EXECUTION)
+# ==================================================
+def pipeline_worker():
+    logger.info("[WORKER] Pipeline worker started")
+
+    while True:
+        event = event_queue.get()
+
+        if event is None:
+            break
+
+        try:
+            logger.info(f"[WORKER] Running pipeline for {event['clip_id']}")
+            trigger_pipeline(event)
+            logger.info(f"[WORKER] Completed pipeline for {event['clip_id']}")
+        except Exception as e:
+            logger.error(f"Pipeline failed for {event['clip_id']}: {e}")
+
+        event_queue.task_done()
+
+
+# ==================================================
+# ENSURE KAFKA TOPICS
+# ==================================================
 def ensure_topics_exist():
-    """Ensure required Kafka topics exist, create them if not."""
     try:
         admin_client = KafkaAdminClient(
             bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
-            client_id='klv-metadata-admin'
+            client_id="klv-metadata-admin",
         )
         existing_topics = admin_client.list_topics()
         topics_to_create = []
@@ -34,8 +64,8 @@ def ensure_topics_exist():
             topics_to_create.append(
                 NewTopic(
                     name=config.KAFKA_TOPIC_INPUT,
-                    num_partitions=1,  # Adjust as needed
-                    replication_factor=1
+                    num_partitions=1,
+                    replication_factor=1,
                 )
             )
         if config.KAFKA_TOPIC_OUTPUT not in existing_topics:
@@ -43,8 +73,8 @@ def ensure_topics_exist():
             topics_to_create.append(
                 NewTopic(
                     name=config.KAFKA_TOPIC_OUTPUT,
-                    num_partitions=1,  # Adjust as needed
-                    replication_factor=1
+                    num_partitions=1,
+                    replication_factor=1,
                 )
             )
         if topics_to_create:
@@ -58,9 +88,12 @@ def ensure_topics_exist():
         logger.warning(f"Could not create topics: {e}")
         logger.warning("Make sure Kafka is running and accessible")
     finally:
-        if 'admin_client' in locals():
+        if "admin_client" in locals():
             admin_client.close()
 
+# ==================================================
+# HISTORICAL MODE
+# ==================================================
 def process_historical_events():
     consumer = KafkaConsumer(
         config.KAFKA_TOPIC_INPUT,
@@ -69,12 +102,10 @@ def process_historical_events():
         value_deserializer=lambda m: json.loads(m.decode("utf-8")),
         auto_offset_reset="earliest",
         enable_auto_commit=False,
-        consumer_timeout_ms=3000,  # stop when exhausted
+        consumer_timeout_ms=3000,
     )
 
-
     logger.info("[KAFKA] Processing ALL historical events...")
-
 
     processed = 0
 
@@ -84,54 +115,66 @@ def process_historical_events():
         if not event.get("has_klv", False):
             continue
 
-        logger.info(f"[KAFKA] Triggering pipeline for {event['clip_id']}")
-        try:
-            trigger_pipeline(event)
-        except Exception as e:
-            logger.error(f"Pipeline trigger failed for {event['clip_id']}: {e}")
+        logger.info(f"[KAFKA] Queueing pipeline for {event['clip_id']}")
+        event_queue.put(event)
         processed += 1
 
     consumer.close()
-    logger.info(f"[KAFKA] Done. Total processed: {processed}")
+    logger.info(f"[KAFKA] Done. Total queued: {processed}")
 
 
-
+# ==================================================
+# MAIN
+# ==================================================
 def main():
     ensure_topics_exist()
-    parser = argparse.ArgumentParser(description='Kafka Consumer for KLV Metadata Extraction')
-    parser.add_argument('--historical', action='store_true', 
-                       help='Process all historical events from beginning')
-    parser.add_argument('--live', action='store_true', 
-                       help='Process only new events (default)')
-    
+
+    # Start pipeline worker thread
+    worker_thread = threading.Thread(target=pipeline_worker, daemon=True)
+    worker_thread.start()
+
+    parser = argparse.ArgumentParser(
+        description="Kafka Consumer for KLV Metadata Extraction"
+    )
+    parser.add_argument(
+        "--historical",
+        action="store_true",
+        help="Process all historical events from beginning",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Process only new events (default)",
+    )
+
     args = parser.parse_args()
-    
+
     if args.historical:
         process_historical_events()
-    else:
-        # Live processing mode
-        consumer = KafkaConsumer(
-            config.KAFKA_TOPIC_INPUT,
-            bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
-            # group_id=config.KAFKA_GROUP_ID,
-            value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-            auto_offset_reset="latest",  # Start from latest for live processing
-            enable_auto_commit=True,
-        )
+        event_queue.join()
+        return
 
-        logger.info("[KAFKA] Listening for new clip events (live mode)...")
+    # ==================================================
+    # LIVE MODE
+    # ==================================================
+    consumer = KafkaConsumer(
+        config.KAFKA_TOPIC_INPUT,
+        bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
+        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+        auto_offset_reset="latest",
+        enable_auto_commit=True,
+    )
 
-        for message in consumer:
-            event = message.value
+    logger.info("[KAFKA] Listening for new clip events (live mode)...")
 
-            if not event.get("has_klv", False):
-                continue
+    for message in consumer:
+        event = message.value
 
-            logger.info(f"[KAFKA] Triggering pipeline for {event['clip_id']}")
-            try:
-                trigger_pipeline(event)
-            except Exception as e:
-                logger.error(f"Pipeline trigger failed for {event['clip_id']}: {e}")
+        if not event.get("has_klv", False):
+            continue
+
+        logger.info(f"[KAFKA] Queueing pipeline for {event['clip_id']}")
+        event_queue.put(event)
 
 
 if __name__ == "__main__":
