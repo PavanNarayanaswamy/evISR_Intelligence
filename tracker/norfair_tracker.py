@@ -5,6 +5,53 @@ from norfair import Detection, Tracker
 from norfair.camera_motion import MotionEstimator
 from rfdetr.util.coco_classes import COCO_CLASSES
 
+# ==================================================
+# HISTOGRAM EMBEDDING (ReID)
+# ==================================================
+def get_hist_embedding(cutout):
+    hsv = cv2.cvtColor(cutout, cv2.COLOR_BGR2HSV)
+
+    hist = cv2.calcHist(
+        [hsv],
+        [0, 1],
+        None,
+        [16, 16],
+        [0, 180, 0, 256],
+    )
+
+    cv2.normalize(hist, hist)
+    return hist
+
+
+# ==================================================
+# ReID DISTANCE FUNCTION
+# ==================================================
+def embedding_distance(matched_not_init_trackers, unmatched_trackers):
+    snd_embedding = unmatched_trackers.last_detection.embedding
+
+    if snd_embedding is None:
+        for detection in reversed(unmatched_trackers.past_detections):
+            if detection.embedding is not None:
+                snd_embedding = detection.embedding
+                break
+        else:
+            return 1
+
+    for detection_fst in matched_not_init_trackers.past_detections:
+        if detection_fst.embedding is None:
+            continue
+
+        distance = 1 - cv2.compareHist(
+            snd_embedding,
+            detection_fst.embedding,
+            cv2.HISTCMP_CORREL,
+        )
+
+        if distance < 0.5:
+            return distance
+
+    return 1
+
 
 class NorfairTrackerAnnotator:
     """
@@ -58,20 +105,22 @@ class NorfairTrackerAnnotator:
                 Minimum number of consecutive detections required
                 before a track is assigned a permanent ID.
         """
-
         # -------------------------------
-        # Norfair tracker
+        # Norfair tracker WITH ReID enabled
         # -------------------------------
         self.tracker = Tracker(
             distance_function=distance_function,
             distance_threshold=distance_threshold,
             hit_counter_max=hit_counter_max,
             initialization_delay=initialization_delay,
+            
+            # ReID configuration
+            past_detections_length=5,
+            reid_distance_function=embedding_distance,
+            reid_distance_threshold=0.5,
+            reid_hit_counter_max=500,
         )
 
-        # -------------------------------
-        # Camera motion estimator
-        # -------------------------------
         self.motion_estimator = MotionEstimator(
             max_points=200,
             min_distance=15,
@@ -131,9 +180,9 @@ class NorfairTrackerAnnotator:
         # -----------------------------------         
         coord_transform = self.motion_estimator.update(frame)
 
-        # -----------------------------------
-        # Convert detections → Norfair format
-        # -----------------------------------
+        # --------------------------------------------------
+        # Convert detections → Norfair format (WITH EMBEDDING)
+        # --------------------------------------------------
         for box, conf, cls in zip(
             detections.xyxy,
             detections.confidence,
@@ -145,11 +194,20 @@ class NorfairTrackerAnnotator:
             cx = (x1 + x2) / 2
             cy = (y1 + y2) / 2
 
+            # ReID embedding
+            x1i, y1i, x2i, y2i = map(int, box)
+            cutout = frame[y1i:y2i, x1i:x2i]
+
+            embedding = None
+            if cutout.size > 0:
+                embedding = get_hist_embedding(cutout)
+
             norfair_detections.append(
                 Detection(
                     # Norfair tracks points, not boxes
                     points=np.array([[cx, cy]]),
                     scores=np.array([conf]),
+                    embedding=embedding,
                     data={
                         # Store metadata for downstream use
                         "bbox": box,
@@ -262,3 +320,4 @@ class NorfairTrackerAnnotator:
             )
 
         return frame, tracked_objects
+ 
