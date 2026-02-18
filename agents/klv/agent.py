@@ -49,7 +49,7 @@ def decode_node(state: KLVState) -> KLVState:
         json.dump(decoded, f, indent=2)
 
     now = datetime.datetime.now()
-    object_name = f"decoding/{now.strftime('%Y/%m/%d/%H')}/{clip_id}.json"
+    object_name = f"decoding/{now.strftime('%Y/%m/%d/%H')}/klv_decoded_{clip_id}.json"
 
     logger.info(f"[KLV_AGENT] Uploading decoded JSON for clip_id={clip_id}")
     upload_output(output_bucket, object_name, output_json)

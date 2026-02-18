@@ -1,4 +1,4 @@
-from zenml import step
+from zenml import step, log_metadata
 from pathlib import Path
 import json
 import os
@@ -33,7 +33,7 @@ logger = get_logger(__name__)
 # DOWNLOAD STEP
 # -------------------------------------------------
 @step
-def download_clip(clip_id: str, clip_uri: str) -> tuple[str, float]:
+def minio_segmented_clip(clip_id: str, clip_uri: str) -> Tuple[Annotated[str, "video_path"], Annotated[float, "video_duration"]]:
     """
     Downloads TS from MinIO as ./<clip_id>.ts
     """
@@ -226,7 +226,7 @@ def object_detection_agent(
     hit_counter_max: int,
     initialization_delay: int,
     distance_function: str,
-) -> tuple[str, float]:
+) -> Tuple[ Annotated[str, "detection_uri"], Annotated[float, "fps"]]:
     """
     ZenML step = execution boundary.
     Real logic lives in detection agent (LangGraph).
@@ -246,6 +246,7 @@ def object_detection_agent(
         "save_mp4": bool(getattr(config, "SAVE_MP4", False)),
     })
 
+    log_metadata(metadata={"Model_Metrics": out.get("metrics", {})})
     return out["det_json_uri"], out["fps"]
 
 # --------------------------------------------------
@@ -384,7 +385,7 @@ def fusion_context_agent(
     det_json_uri: str,
     output_bucket: str,
     fps: float,
-) -> str:
+) -> Annotated[str, "fusion_uri"]:
     """
     ZenML step boundary for context fusion.
     Actual fusion logic runs inside the fusion agent (LangGraph).
@@ -494,7 +495,7 @@ def llm_summary_agent(
     fusion_json_uri: str,
     output_bucket: str,
     model: str = "qwen3-vl:30b",
-) -> str:
+) -> Annotated[str, "summary_uri"]:
     """
     ZenML step boundary for LLM video summary.
     Actual summarization runs inside the LLM summary agent.

@@ -1,6 +1,6 @@
 from zenml import pipeline
 from .steps import (
-    download_clip,
+    minio_segmented_clip,
     klv_extraction_agent,
     object_detection_agent,
     fusion_context_agent,
@@ -30,7 +30,7 @@ def isr_pipeline(
 ):
     logger.info(f"Pipeline started for clip_id: {clip_id}")
 
-    ts_path, video_duration = download_clip(clip_id, clip_uri)
+    ts_path, video_duration = minio_segmented_clip(clip_id, clip_uri)
     logger.info(f"Downloaded clip for clip_id: {clip_id}")
 
     # Extract Metadata (KLV )

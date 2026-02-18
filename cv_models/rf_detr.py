@@ -1,7 +1,10 @@
 import cv2
+import time
+import torch
+import supervision as sv
+
 from rfdetr import RFDETRMedium
 from rfdetr.util.coco_classes import COCO_CLASSES
-import supervision as sv
 
 
 class RFDetrDetector:
@@ -32,10 +35,42 @@ class RFDetrDetector:
         """
         self.confidence_threshold = confidence_threshold
 
-        # RF-DETR model initialization
-        # Heavy operation, intentionally done once per process
+        self.total_inference_time = 0
+        self.total_frames = 0
+
+        self.model_name = "rfdetr_medium"
+
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats()
+
         self.model = RFDETRMedium()
 
+    # --------------------------------------------------
+    # METRICS
+    # --------------------------------------------------
+    def get_metrics(self):
+        if self.total_frames == 0:
+            return {}
+
+        avg_latency = self.total_inference_time / self.total_frames
+
+        metrics = {
+            "model_name": self.model_name,
+            "avg_inference_latency_ms": avg_latency * 1000,
+            "detector_fps": 1 / avg_latency if avg_latency > 0 else 0,
+            "detector_total_frames": self.total_frames,
+        }
+
+        if torch.cuda.is_available():
+            metrics["gpu_peak_memory_mb"] = (
+                torch.cuda.max_memory_allocated() / 1024 ** 2
+            )
+
+        return metrics
+
+    # --------------------------------------------------
+    # DETECT
+    # --------------------------------------------------
     def detect(self, frame):
         """
         Runs object detection on a single video frame.
@@ -57,6 +92,7 @@ class RFDetrDetector:
         """
         # Convert frame from OpenCV BGR to RGB
         # RF-DETR expects RGB input
+        start = time.perf_counter()
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Run model inference
@@ -65,19 +101,19 @@ class RFDetrDetector:
             threshold=self.confidence_threshold
         )
 
-        # Normalize model output into supervision's Detections format
+        latency = time.perf_counter() - start
+        self.total_inference_time += latency
+        self.total_frames += 1
+
         sv_detections = sv.Detections(
             xyxy=detections.xyxy,
             confidence=detections.confidence,
             class_id=detections.class_id,
         )
 
-        # Attach human-readable class names for downstream consumers
-        # (visualization, JSON serialization, analytics)
         sv_detections.data["class_name"] = [
             COCO_CLASSES[c] for c in detections.class_id
         ]
 
         return sv_detections
-
-
+ 

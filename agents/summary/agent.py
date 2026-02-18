@@ -73,7 +73,7 @@ def upload_node(state: SummaryState) -> Dict[str, Any]:
     object_name = (
         f"summary/"
         f"{now.strftime('%Y/%m/%d/%H')}/"
-        f"{clip_id}.txt"
+        f"llm_summary_{clip_id}.txt"
     )
 
     logger.info(

@@ -69,7 +69,7 @@ class Extraction:
         object_name = (
             f"extraction/"
             f"{now.strftime('%Y/%m/%d/%H')}/"
-            f"{clip_id}.klv"
+            f"klv_extraction_{clip_id}.klv"
         )
 
         upload_output(

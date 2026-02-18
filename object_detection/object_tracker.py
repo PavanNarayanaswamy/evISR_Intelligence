@@ -1,6 +1,7 @@
 import cv2
 import os
 import json
+import numpy as np
 from datetime import datetime
 from typing import Any
 
@@ -12,12 +13,6 @@ from zenml_pipeline.minio_utils import upload_output
 class ObjectTracker:
     """
     Object Detection + Tracking Orchestrator.
-
-    Lifecycle:
-        start()   -> open video, init metadata
-        process() -> detect + track
-        write_outputs() -> JSON / MP4
-        cleanup() -> release resources
     """
 
     def __init__(
@@ -59,8 +54,20 @@ class ObjectTracker:
         self._mp4_writer = None
         self._mp4_path = None
 
-    # --------------------------------------------------
-    # START
+        # -----------------------
+        # METRIC STORAGE (ADDED)
+        # -----------------------
+        self.total_detections = 0
+        self.confidences = []
+
+        self.total_tracks = set()
+        self.confirmed_tracks = set()
+        self.track_lifetimes = {}
+
+        self.total_frames = 0
+
+        self.SHORT_TRACK_THRESHOLD = 5
+
     # --------------------------------------------------
     def start(self, enable_mp4: bool = False) -> None:
         self.cap = cv2.VideoCapture(self.video_path, cv2.CAP_FFMPEG)
@@ -85,13 +92,9 @@ class ObjectTracker:
                 "run_timestamp": self.run_timestamp,
             }
 
-        # DEV-only: init MP4 writer BEFORE processing
         if enable_mp4:
             self._init_mp4_writer()
 
-
-    # --------------------------------------------------
-    # PROCESS
     # --------------------------------------------------
     def process(self) -> None:
         frame_index = 0
@@ -106,20 +109,36 @@ class ObjectTracker:
                 frame, detections
             )
 
+            # -----------------------
+            # METRIC COLLECTION (ADDED)
+            # -----------------------
+            for conf in detections.confidence:
+                self.total_detections += 1
+                self.confidences.append(float(conf))
+
+            for obj in tracked:
+                track_id = obj.id
+
+                self.total_tracks.add(track_id)
+
+                if getattr(obj, "is_confirmed", False):
+                    self.confirmed_tracks.add(track_id)
+
+                if hasattr(obj, "age"):
+                    self.track_lifetimes[track_id] = obj.age
+
+            self.total_frames += 1
+
             # JSON sink
             if self.enable_json_output:
                 self._json_data["frames"][frame_index] = \
                     self._serialize_frame(tracked)
 
-            # MP4 sink (DEV only)
             if self._mp4_writer:
                 self._mp4_writer.write(annotated)
 
             frame_index += 1
 
-
-    # --------------------------------------------------
-    # OUTPUTS
     # --------------------------------------------------
     def write_outputs(self) -> str | None:
         if not self.enable_json_output:
@@ -129,6 +148,7 @@ class ObjectTracker:
             raise RuntimeError(
                 "write_outputs() called before start()/process()"
             )
+
         now = datetime.now()
 
         json_uri = None
@@ -142,7 +162,7 @@ class ObjectTracker:
                 json.dump(self._json_data, f, indent=2)
 
             object_name = (
-                f"detection/{now.strftime('%Y/%m/%d/%H')}/{self.clip_id}.json"
+                f"detection/{now.strftime('%Y/%m/%d/%H')}/detection_{self.clip_id}.json"
             )
 
             upload_output(
@@ -153,7 +173,77 @@ class ObjectTracker:
 
             json_uri = f"minio://{self.output_bucket_detection}/{object_name}"
 
-        return json_uri, self.fps
+        # ==================================================
+        # METRICS COMPUTATION (ADDED)
+        # ==================================================
+
+        avg_confidence = float(np.mean(self.confidences)) if self.confidences else 0.0
+        confidence_std = float(np.std(self.confidences)) if self.confidences else 0.0
+
+        total_tracks = len(self.total_tracks)
+        confirmed_tracks = len(self.confirmed_tracks)
+
+        confirmation_ratio = (
+            confirmed_tracks / total_tracks if total_tracks else 0.0
+        )
+
+        avg_track_age = (
+            float(np.mean(list(self.track_lifetimes.values())))
+            if self.track_lifetimes else 0.0
+        )
+
+        short_tracks = sum(
+            1 for age in self.track_lifetimes.values()
+            if age < self.SHORT_TRACK_THRESHOLD
+        )
+
+        short_track_ratio = (
+            short_tracks / total_tracks if total_tracks else 0.0
+        )
+
+        normalized_avg_track_age = (
+            avg_track_age / self.total_frames if self.total_frames else 0.0
+        )
+
+        accuracy_score = (
+            0.30 * avg_confidence +
+            0.25 * confirmation_ratio +
+            0.25 * normalized_avg_track_age +
+            0.10 * (1 - confidence_std) +
+            0.10 * (1 - short_track_ratio)
+        )
+
+        detector_metrics = (
+            self.detector.get_metrics()
+            if hasattr(self.detector, "get_metrics")
+            else {}
+        )
+
+        metrics = {
+            "run_timestamp": self.run_timestamp,
+            **detector_metrics,
+
+            "avg_confidence": avg_confidence,
+            "confidence_std": confidence_std,
+            "total_detections": self.total_detections,
+
+            "total_tracks": total_tracks,
+            "confirmed_tracks": confirmed_tracks,
+            "confirmation_ratio": confirmation_ratio,
+
+            "avg_track_age": avg_track_age,
+            "short_track_ratio": short_track_ratio,
+
+            "accuracy_score": accuracy_score,
+        }
+
+        metrics_filename = f"metrics_{self.run_timestamp}.json"
+        metrics_path = os.path.join(self.run_dir, metrics_filename)
+
+        with open(metrics_path, "w") as f:
+            json.dump(metrics, f, indent=2)
+
+        return json_uri, self.fps, metrics
 
 
 # --------------------------------------------------
@@ -271,4 +361,3 @@ class ObjectTracker:
             )
 
         return {"objects": objects}
-

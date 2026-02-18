@@ -130,7 +130,7 @@ def upload_node(state: FusionState) -> Dict[str, Any]:
     semantic_object_name = (
         f"semantic_fusion/"
         f"{now.strftime('%Y/%m/%d/%H')}/"
-        f"{clip_id}.json"
+        f"semantic_fusion_{clip_id}.json"
     )
     upload_output(
         bucket=output_bucket,
