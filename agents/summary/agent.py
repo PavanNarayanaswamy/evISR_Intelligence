@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 
-from langgraph.graph import StateGraph, START, END  # [web:13]
+from langgraph.graph import StateGraph, START, END 
 from utils.logger import get_logger
 
 from zenml_pipeline.minio_utils import download_file, upload_output
@@ -16,40 +16,40 @@ from .state import SummaryState
 logger = get_logger(__name__)
 
 
-def download_and_load_node(state: SummaryState) -> Dict[str, Any]:
+def download_and_load_node(state: SummaryState) -> SummaryState:
     """
     Download fusion JSON and load into memory.
     """
-    clip_id = state["clip_id"]
+    clip_id = state.clip_id
     logger.info(f"[SUMMARY_AGENT] Downloading fusion JSON for clip_id={clip_id}")
 
     local_fusion = Path("/tmp") / f"{clip_id}_fusion.json"
-    download_file(state["fusion_json_uri"], local_fusion)
+    download_file(state.fusion_json_uri, local_fusion)
     logger.info(f"[SUMMARY_AGENT] Downloaded fusion JSON to {local_fusion}")
 
     with open(local_fusion, "r") as f:
         fusion_context = json.load(f)
 
-    return {
-        "local_fusion_path": str(local_fusion),
-        "fusion_context": fusion_context,
-    }
+    return state.model_copy(update={
+        "local_fusion_path": str(local_fusion), "fusion_context": fusion_context,
+        "updated_at": datetime.datetime.now()
+    })
 
 
-def run_llm_node(state: SummaryState) -> Dict[str, Any]:
+def run_llm_node(state: SummaryState) -> SummaryState:
     """
     Call VideoLLMSummarizer to generate the summary text.
     """
-    clip_id = state["clip_id"]
-    model = state["model"]
-    ts_path = state["ts_path"]
+    clip_id = state.clip_id
+    model = state.model
+    ts_path = state.ts_path
 
     logger.info(
         f"[SUMMARY_AGENT] Running LLM summarization clip_id={clip_id} model={model}"
     )
 
     summary = VideoLLMSummarizer.summarize(
-        fusion_context=state["fusion_context"],
+        fusion_context=state.fusion_context,
         model=model,
         video_path=ts_path,
     )
@@ -58,16 +58,16 @@ def run_llm_node(state: SummaryState) -> Dict[str, Any]:
     summary_path.write_text(summary)
     logger.info(f"[SUMMARY_AGENT] Wrote summary to {summary_path}")
 
-    return {"summary_path": str(summary_path)}
+    return state.model_copy(update={"summary_path": str(summary_path), "updated_at": datetime.datetime.now()})
 
 
-def upload_node(state: SummaryState) -> Dict[str, Any]:
+def upload_node(state: SummaryState) -> SummaryState:
     """
     Upload summary file to MinIO and return URI.
     """
-    clip_id = state["clip_id"]
-    output_bucket = state["output_bucket"]
-    summary_path = Path(state["summary_path"])
+    clip_id = state.clip_id
+    output_bucket = state.output_bucket
+    summary_path = Path(state.summary_path)
 
     now = datetime.datetime.now()
     object_name = (
@@ -88,17 +88,17 @@ def upload_node(state: SummaryState) -> Dict[str, Any]:
 
     summary_uri = f"minio://{output_bucket}/{object_name}"
     logger.info(f"[SUMMARY_AGENT] Summary URI: {summary_uri}")
-    return {"summary_uri": summary_uri}
+    return state.model_copy(update={"summary_uri": summary_uri, "updated_at": datetime.datetime.now()})
 
 
-def cleanup_node(state: SummaryState) -> Dict[str, Any]:
+def cleanup_node(state: SummaryState) -> SummaryState:
     """
     Remove local temp files, including the TS copy if it still exists.
     """
     paths = [
-        state.get("local_fusion_path"),
-        state.get("summary_path"),
-        state.get("ts_path"),
+        state.local_fusion_path,
+        state.summary_path,
+        state.ts_path,
     ]
 
     for p_str in paths:
@@ -114,14 +114,14 @@ def cleanup_node(state: SummaryState) -> Dict[str, Any]:
                     f"[SUMMARY_AGENT] Failed to remove {p}: {e}",
                     exc_info=True,
                 )
-    return {}
+    return state.model_copy(update={"updated_at": datetime.datetime.now()})
 
 
 def build_summary_graph():
     """
-    Linear graph: download+load -> run_llm -> upload -> cleanup -> END. [web:13]
+    Linear graph: download+load -> run_llm -> upload -> cleanup -> END.
     """
-    g = StateGraph(SummaryState)
+    g = StateGraph(state_schema=SummaryState)
     g.add_node("download_and_load", download_and_load_node)
     g.add_node("run_llm", run_llm_node)
     g.add_node("upload", upload_node)
@@ -133,7 +133,7 @@ def build_summary_graph():
     g.add_edge("upload", "cleanup")
     g.add_edge("cleanup", END)
 
-    return g.compile()  # [web:13]
+    return g.compile()
 
 
 llm_summary_graph = build_summary_graph()

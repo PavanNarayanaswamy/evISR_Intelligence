@@ -1,3 +1,4 @@
+# zenml_pipeline/pipeline.py
 from zenml import pipeline
 from .steps import (
     minio_segmented_clip,

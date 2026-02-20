@@ -1,3 +1,4 @@
+# zenml_pipeline/steps.py
 from zenml import step, log_metadata
 from pathlib import Path
 import json
@@ -18,14 +19,18 @@ from fusion_context.semantic_fusion import SemanticFusion
 from video_summary.summary_gen import VideoLLMSummarizer
 from utils import config
 
-from typing import Tuple
+from typing import Tuple, List
 from typing_extensions import Annotated
 
 #Agent Wrapper Imports
 from agents.klv.agent import klv_graph
+from agents.klv.state import KLVState
 from agents.detection.agent import detection_graph
+from agents.detection.state import DetectionState
 from agents.fusion.agent import fusion_graph
+from agents.fusion.state import FusionState
 from agents.summary.agent import llm_summary_graph
+from agents.summary.state import SummaryState
 
 logger = get_logger(__name__)
     
@@ -144,20 +149,33 @@ def decode_metadata(
 def klv_extraction_agent(
     ts_path: str,
     clip_id: str,
-    jars: list[str],
+    jars: List[str],
     output_bucket: str,
 ) -> Tuple[
-    Annotated[str, "klv_extraction_uri"],
-    Annotated[str, "klv_decoding_uri"],
+    Annotated[str, "extraction_uri"],
+    Annotated[str, "decoding_uri"],
 ]:
-    out = klv_graph.invoke({  # invoke is the standard compiled-graph call.
-        "ts_path": ts_path,
-        "clip_id": clip_id,
-        "jars": jars,
-        "output_bucket": output_bucket,
-    })
-    # Returning a tuple literal => ZenML treats as multiple output artifacts.
-    return out["extraction_uri"], out["decoding_uri"]
+    """ZenML step wrapper with Pydantic validation."""
+    
+    state = KLVState(
+        clip_id=clip_id,
+        ts_path=ts_path,
+        output_bucket=output_bucket,
+        jars=jars,
+    )
+    
+    # Run graph → LangGraph returns dict
+    raw_state = klv_graph.invoke(state)
+    
+    final_state = KLVState.model_validate(raw_state)
+    
+    assert final_state.is_complete, "KLV agent failed to complete"
+    
+    return (
+        final_state.extraction_uri,
+        final_state.decoding_uri,
+    )
+
 
 # --------------------------------------------------
 # Object Detection STEP
@@ -217,37 +235,27 @@ def object_detection(
 '''
 @step(enable_cache=False)
 def object_detection_agent(
-    clip_id: str,
-    ts_path: str,
-    output_bucket_detection: str,
-    output_path: str,
-    confidence_threshold: float,
-    distance_threshold: int,
-    hit_counter_max: int,
-    initialization_delay: int,
-    distance_function: str,
-) -> Tuple[ Annotated[str, "detection_uri"], Annotated[float, "fps"]]:
-    """
-    ZenML step = execution boundary.
-    Real logic lives in detection agent (LangGraph).
-    """
-    logger.info(f"[ZENML] Object detection step clip_id={clip_id} ts_path={ts_path}")
-
-    out = detection_graph.invoke({
-        "clip_id": clip_id,
-        "ts_path": ts_path,
-        "output_bucket_detection": output_bucket_detection,
-        "output_path": output_path,
-        "confidence_threshold": confidence_threshold,
-        "distance_threshold": distance_threshold,
-        "hit_counter_max": hit_counter_max,
-        "initialization_delay": initialization_delay,
-        "distance_function": distance_function,
-        "save_mp4": bool(getattr(config, "SAVE_MP4", False)),
-    })
-
-    log_metadata(metadata={"Model_Metrics": out.get("metrics", {})})
-    return out["det_json_uri"], out["fps"]
+    clip_id: str, ts_path: str, output_bucket_detection: str, output_path: str,
+    confidence_threshold: float, distance_threshold: int, hit_counter_max: int,
+    initialization_delay: int, distance_function: str,
+) -> Tuple[
+    Annotated[str, "det_json_uri"],
+    Annotated[float, "fps"],
+]:
+    state = DetectionState(
+        clip_id=clip_id, ts_path=ts_path, output_bucket_detection=output_bucket_detection,
+        output_path=output_path, confidence_threshold=confidence_threshold,
+        distance_threshold=distance_threshold, hit_counter_max=hit_counter_max,
+        initialization_delay=initialization_delay, distance_function=distance_function,
+        save_mp4=bool(getattr(config, "SAVE_MP4", False)),
+    )
+    
+    raw_state = detection_graph.invoke(state)
+    final_state = DetectionState.model_validate(raw_state)
+    assert final_state.is_complete, "Detection agent failed"
+    
+    log_metadata({"Model_Metrics": final_state.metrics or {}})
+    return final_state.det_json_uri, final_state.fps
 
 # --------------------------------------------------
 # FUSION STEP
@@ -378,14 +386,8 @@ def fusion_context(
                     )
 '''
 @step(enable_cache=False)
-def fusion_context_agent(
-    clip_id: str,
-    video_duration: float,
-    klv_json_uri: str,
-    det_json_uri: str,
-    output_bucket: str,
-    fps: float,
-) -> Annotated[str, "fusion_uri"]:
+def fusion_context_agent(clip_id: str, video_duration: float, klv_json_uri: str,
+                        det_json_uri: str, output_bucket: str, fps: float) -> Annotated[str, "fusion_uri"]:
     """
     ZenML step boundary for context fusion.
     Actual fusion logic runs inside the fusion agent (LangGraph).
@@ -396,17 +398,15 @@ def fusion_context_agent(
         f"fps={fps}"
     )
 
-    out = fusion_graph.invoke({
-        "clip_id": clip_id,
-        "video_duration": video_duration,
-        "klv_json_uri": klv_json_uri,
-        "det_json_uri": det_json_uri,
-        "output_bucket": output_bucket,
-        "fps": fps,
-    })
+    state = FusionState(clip_id=clip_id, video_duration=video_duration,
+                       klv_json_uri=klv_json_uri, det_json_uri=det_json_uri,
+                       output_bucket=output_bucket, fps=fps)
 
-    return out["fusion_uri"]
-
+    raw_state = fusion_graph.invoke(state)
+    final_state = FusionState.model_validate(raw_state)
+    assert final_state.is_complete, "Fusion agent failed"
+    
+    return final_state.fusion_uri
 # --------------------------------------------------
 # LLM SUMMARY STEP
 # --------------------------------------------------
@@ -489,13 +489,8 @@ def llm_summary(
                     pass
 '''
 @step(enable_cache=False)
-def llm_summary_agent(
-    clip_id: str,
-    ts_path: str,
-    fusion_json_uri: str,
-    output_bucket: str,
-    model: str = "qwen3-vl:30b",
-) -> Annotated[str, "summary_uri"]:
+def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
+                     output_bucket: str, model: str = "qwen3-vl:30b") -> Annotated[str, "summary_uri"]:
     """
     ZenML step boundary for LLM video summary.
     Actual summarization runs inside the LLM summary agent.
@@ -505,12 +500,11 @@ def llm_summary_agent(
         f"fusion_json_uri={fusion_json_uri} model={model}"
     )
 
-    out = llm_summary_graph.invoke({
-        "clip_id": clip_id,
-        "ts_path": ts_path,
-        "fusion_json_uri": fusion_json_uri,
-        "output_bucket": output_bucket,
-        "model": model,
-    })
-
-    return out["summary_uri"]
+    state = SummaryState(clip_id=clip_id, ts_path=ts_path,
+                        fusion_json_uri=fusion_json_uri, output_bucket=output_bucket, model=model)
+    
+    raw_state = llm_summary_graph.invoke(state)
+    final_state = SummaryState.model_validate(raw_state)
+    assert final_state.is_complete, "Summary agent failed"
+    
+    return final_state.summary_uri

@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 from typing import Literal
 
+
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
 from utils.logger import get_logger
 
 from klv_metadata_extraction.extraction import Extraction
@@ -17,31 +19,37 @@ logger = get_logger(__name__)
 
 
 def extract_node(state: KLVState) -> KLVState:
-    logger.info(f"[KLV_AGENT] Extracting KLV for clip_id={state['clip_id']}")
+    """Extract KLV from TS → MinIO URI."""
+    logger.info(f"[KLV_AGENT] Extracting KLV for clip_id={state.clip_id}")
+    
     extractor = Extraction(
         minio_client=get_minio_client(),
-        output_bucket=state["output_bucket"],
+        output_bucket=state.output_bucket,
     )
     extraction_uri = extractor.extract_klv(
-        ts_path=state["ts_path"],
-        clip_id=state["clip_id"],
+        ts_path=state.ts_path,
+        clip_id=state.clip_id,
     )
-    state["extraction_uri"] = extraction_uri
-    return state
+    
+    return state.model_copy(update={
+        "extraction_uri": extraction_uri,
+        "updated_at": datetime.datetime.now(),
+    })
 
 
 def decode_node(state: KLVState) -> KLVState:
-    clip_id = state["clip_id"]
-    output_bucket = state["output_bucket"]
+    """Download KLV → Decode → Upload JSON → MinIO URI."""
+    clip_id = state.clip_id
+    output_bucket = state.output_bucket
 
     local_klv = Path("/tmp") / f"{clip_id}.klv"
     output_json = Path("/tmp") / f"{clip_id}.json"
 
     logger.info(f"[KLV_AGENT] Downloading KLV for clip_id={clip_id}")
-    download_file(state["extraction_uri"], local_klv)
+    download_file(state.extraction_uri, local_klv)
 
     logger.info(f"[KLV_AGENT] Decoding KLV for clip_id={clip_id}")
-    decoder = JmisbDecoder(state["jars"])
+    decoder = JmisbDecoder(state.jars)
     decoder.start_jvm()
     decoded = decoder.decode_file(str(local_klv))
 
@@ -54,13 +62,17 @@ def decode_node(state: KLVState) -> KLVState:
     logger.info(f"[KLV_AGENT] Uploading decoded JSON for clip_id={clip_id}")
     upload_output(output_bucket, object_name, output_json)
 
-    state["decoding_uri"] = f"minio://{output_bucket}/{object_name}"
-    return state
+    decoding_uri = f"minio://{output_bucket}/{object_name}"
+    
+    return state.model_copy(update={
+        "decoding_uri": decoding_uri,
+        "updated_at": datetime.datetime.now(),
+    })
 
 
 def cleanup_node(state: KLVState) -> KLVState:
-    # IMPORTANT: do NOT delete ts_path here; object detection still needs it.
-    clip_id = state["clip_id"]
+    """Clean temp files (KLV/JSON, not TS)."""
+    clip_id = state.clip_id
     for p in [Path("/tmp") / f"{clip_id}.klv", Path("/tmp") / f"{clip_id}.json"]:
         try:
             if p.exists():
@@ -68,28 +80,30 @@ def cleanup_node(state: KLVState) -> KLVState:
                 logger.debug(f"[KLV_AGENT] Removed temp file: {p}")
         except Exception as e:
             logger.warning(f"[KLV_AGENT] Cleanup failed for {p}: {e}")
-    return state
+    
+    return state.model_copy(update={
+        "updated_at": datetime.datetime.now(),
+    })
 
 
 def emit_gate(state: KLVState) -> Literal["emit", "skip"]:
-    """
-    Routing decision.
-    For now: always emit, but keep this hook for delta filtering later.
-    """
-    # Example future logic:
-    # if state.get("emit") is False: return "skip"
-    return "emit"
+    """Route based on emit flag."""
+    return "emit" if state.emit else "skip"
 
 
 def skip_node(state: KLVState) -> KLVState:
-    # If you ever skip, you can still return extraction_uri but omit decoding_uri.
-    logger.info(f"[KLV_AGENT] Skipping decoded output for clip_id={state['clip_id']}")
-    state["decoding_uri"] = None  # type: ignore
-    return state
+    """Skip decoding output."""
+    logger.info(f"[KLV_AGENT] Skipping decoded output for clip_id={state.clip_id}")
+    return state.model_copy(update={
+        "decoding_uri": None,
+        "updated_at": datetime.datetime.now(),
+    })
 
 
 def build_klv_graph():
-    g = StateGraph(KLVState)
+    """Build compiled graph with Pydantic state validation."""
+    g = StateGraph(state_schema=KLVState)  # 🚀 Pydantic validation here
+    
     g.add_node("extract", extract_node)
     g.add_node("decode", decode_node)
     g.add_node("cleanup", cleanup_node)
@@ -99,11 +113,9 @@ def build_klv_graph():
     g.add_edge("extract", "decode")
     g.add_edge("decode", "cleanup")
 
-    # Conditional edges are the LangGraph-native way to route based on state.
     g.add_conditional_edges("cleanup", emit_gate, {"emit": END, "skip": "skip"})
     g.add_edge("skip", END)
 
     return g.compile()
-
 
 klv_graph = build_klv_graph()

@@ -17,35 +17,35 @@ from .state import FusionState
 logger = get_logger(__name__)
 
 
-def download_inputs_node(state: FusionState) -> Dict[str, Any]:
+def download_inputs_node(state: FusionState) -> FusionState:
     """
     Download KLV + detection JSON from MinIO into /tmp.
     """
-    clip_id = state["clip_id"]
+    clip_id = state.clip_id
     logger.info(f"[FUSION_AGENT] Downloading inputs for clip_id={clip_id}")
 
     local_klv = Path("/tmp") / f"{clip_id}_klv.json"
     local_det = Path("/tmp") / f"{clip_id}_det.json"
 
-    download_file(state["klv_json_uri"], local_klv)
+    download_file(state.klv_json_uri, local_klv)
     logger.info(f"[FUSION_AGENT] Downloaded KLV JSON to {local_klv}")
 
-    download_file(state["det_json_uri"], local_det)
+    download_file(state.det_json_uri, local_det)
     logger.info(f"[FUSION_AGENT] Downloaded detection JSON to {local_det}")
 
-    return {
-        "local_klv_path": str(local_klv),
-        "local_det_path": str(local_det),
-    }
+    return state.model_copy(update={
+        "local_klv_path": str(local_klv), "local_det_path": str(local_det),
+        "updated_at": datetime.datetime.now()
+    })
 
 
-def load_and_fuse_node(state: FusionState) -> Dict[str, Any]:
+def load_and_fuse_node(state: FusionState) -> FusionState:
     """
     Load JSON, run TemporalFusion, and write fusion output locally.
     """
-    clip_id = state["clip_id"]
-    local_klv = Path(state["local_klv_path"])
-    local_det = Path(state["local_det_path"])
+    clip_id = state.clip_id
+    local_klv = Path(state.local_klv_path)
+    local_det = Path(state.local_det_path)
 
     logger.info(f"[FUSION_AGENT] Loading JSON for clip_id={clip_id}")
     with open(local_klv, "r") as f:
@@ -55,7 +55,7 @@ def load_and_fuse_node(state: FusionState) -> Dict[str, Any]:
         det_json = json.load(f)
     
     klv_time_window = 0.5
-    segment_duration_sec = int(math.ceil(state["video_duration"]))
+    segment_duration_sec = int(math.ceil(state.video_duration))
     logger.info(
         f"[FUSION_AGENT] Running TemporalFusion clip_id={clip_id} "
         f"segment_duration_sec={segment_duration_sec}"
@@ -71,7 +71,7 @@ def load_and_fuse_node(state: FusionState) -> Dict[str, Any]:
     # Semantic fusion (uses fps + clip_id)
     semantic_fusion = SemanticFusion.build_semantic_fusion(
         raw_fusion_output=raw_fusion,
-        fps=state["fps"],
+        fps=state.fps,
         clip_id=clip_id,
     )
     logger.info(f"[FUSION_AGENT] Semantic fusion complete clip_id={clip_id}")
@@ -93,26 +93,24 @@ def load_and_fuse_node(state: FusionState) -> Dict[str, Any]:
 
     logger.info(f"[FUSION_AGENT] Wrote raw+semantic fusion for clip_id={clip_id}")
 
-    return {
-        "klv_json": klv_json,
-        "det_json": det_json,
-        "raw_fusion": raw_fusion,
-        "semantic_fusion": semantic_fusion,
-        "raw_fusion_path": str(raw_fusion_path),
-        "semantic_fusion_path": str(semantic_fusion_path),
-    }
+    return state.model_copy(update={
+        "klv_json": klv_json, "det_json": det_json,
+        "raw_fusion": raw_fusion, "semantic_fusion": semantic_fusion,
+        "raw_fusion_path": str(raw_fusion_path), "semantic_fusion_path": str(semantic_fusion_path),
+        "updated_at": datetime.datetime.now()
+    })
 
-def upload_node(state: FusionState) -> Dict[str, Any]:
+def upload_node(state: FusionState) -> FusionState:
     """
     Upload raw_fusion.json → raw_fusion/... and semantic_fusion.json → semantic_fusion/...
     Return semantic URI (matching step behavior).
     """
-    clip_id = state["clip_id"]
-    output_bucket = state["output_bucket"]
+    clip_id = state.clip_id
+    output_bucket = state.output_bucket
     now = datetime.datetime.now()
 
     # Upload raw fusion
-    raw_path = Path(state["raw_fusion_path"])
+    raw_path = Path(state.raw_fusion_path)
     raw_object_name = (
         f"raw_fusion/"
         f"{now.strftime('%Y/%m/%d/%H')}/"
@@ -126,7 +124,7 @@ def upload_node(state: FusionState) -> Dict[str, Any]:
     logger.info(f"[FUSION_AGENT] Raw fusion uploaded → {raw_object_name}")
 
     # Upload semantic fusion
-    semantic_path = Path(state["semantic_fusion_path"])
+    semantic_path = Path(state.semantic_fusion_path)
     semantic_object_name = (
         f"semantic_fusion/"
         f"{now.strftime('%Y/%m/%d/%H')}/"
@@ -140,15 +138,15 @@ def upload_node(state: FusionState) -> Dict[str, Any]:
     logger.info(f"[FUSION_AGENT] Semantic fusion uploaded → {semantic_object_name}")
 
     semantic_uri = f"minio://{output_bucket}/{semantic_object_name}"
-    return {"fusion_uri": semantic_uri}
+    return state.model_copy(update={"fusion_uri": semantic_uri, "updated_at": datetime.datetime.now()})
 
 
-def cleanup_node(state: FusionState) -> Dict[str, Any]:
+def cleanup_node(state: FusionState) -> FusionState:
     """
     Delete local temp files.
     """
     for key in ("local_klv_path", "local_det_path", "raw_fusion_path", "semantic_fusion_path"):
-        path_str = state.get(key)
+        path_str = getattr(state, key)
         if not path_str:
             continue
         p = Path(path_str)
@@ -161,7 +159,7 @@ def cleanup_node(state: FusionState) -> Dict[str, Any]:
                     f"[FUSION_AGENT] Failed to remove {p}: {e}",
                     exc_info=True,
                 )
-    return {}
+    return state.model_copy(update={"updated_at": datetime.datetime.now()})
 
 
 def build_fusion_graph():
@@ -169,7 +167,7 @@ def build_fusion_graph():
     Linear graph: download -> load+fuse -> upload -> cleanup -> END.
     Kept simple and synchronous.
     """
-    g = StateGraph(FusionState)
+    g = StateGraph(state_schema=FusionState)
     g.add_node("download_inputs", download_inputs_node)
     g.add_node("load_and_fuse", load_and_fuse_node)
     g.add_node("upload", upload_node)
