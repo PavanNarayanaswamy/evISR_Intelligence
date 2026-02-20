@@ -174,3 +174,5 @@ PYTHONPATH=. python3 kafka_consumer/consumer.py --live
 ---
 
 
+sudo apt update
+sudo apt install graphviz graphviz-dev

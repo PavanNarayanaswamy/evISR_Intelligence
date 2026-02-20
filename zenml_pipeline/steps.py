@@ -25,12 +25,16 @@ from typing_extensions import Annotated
 #Agent Wrapper Imports
 from agents.klv.agent import klv_graph
 from agents.klv.state import KLVState
+from agents.klv.visualize import visualize_klv_agent
 from agents.detection.agent import detection_graph
 from agents.detection.state import DetectionState
+from agents.detection.visualize import visualize_detection_agent
 from agents.fusion.agent import fusion_graph
 from agents.fusion.state import FusionState
+from agents.fusion.visualize import visualize_fusion_agent
 from agents.summary.agent import llm_summary_graph
 from agents.summary.state import SummaryState
+from agents.summary.visualize import visualize_summary_agent
 
 logger = get_logger(__name__)
     
@@ -167,6 +171,15 @@ def klv_extraction_agent(
     # Run graph → LangGraph returns dict
     raw_state = klv_graph.invoke(state)
     
+    # Visualize graph + upload to MinIO
+    viz = visualize_klv_agent(output_bucket, clip_id)
+    
+    # Log to ZenML UI (shows URIs)
+    log_metadata({
+        "klv_graph_mermaid": viz["mermaid_text"],
+        "klv_graph_png_uri": viz["png_uri"],
+    })
+
     final_state = KLVState.model_validate(raw_state)
     
     assert final_state.is_complete, "KLV agent failed to complete"
@@ -251,6 +264,16 @@ def object_detection_agent(
     )
     
     raw_state = detection_graph.invoke(state)
+
+    # Visualize graph + upload to MinIO
+    viz = visualize_detection_agent(output_bucket_detection, clip_id)
+    
+    # Log to ZenML UI (shows URIs)
+    log_metadata({
+        "detection_graph_mermaid": viz["mermaid_text"],
+        "detection_graph_png_uri": viz["png_uri"],
+    })
+
     final_state = DetectionState.model_validate(raw_state)
     assert final_state.is_complete, "Detection agent failed"
     
@@ -403,6 +426,15 @@ def fusion_context_agent(clip_id: str, video_duration: float, klv_json_uri: str,
                        output_bucket=output_bucket, fps=fps)
 
     raw_state = fusion_graph.invoke(state)
+
+    # Visualize graph + upload to MinIO
+    viz = visualize_fusion_agent(output_bucket, clip_id)
+    # Log to ZenML UI (shows URIs)
+    log_metadata({
+        "fusion_graph_mermaid": viz["mermaid_text"],
+        "fusion_graph_png_uri": viz["png_uri"], 
+    })
+
     final_state = FusionState.model_validate(raw_state)
     assert final_state.is_complete, "Fusion agent failed"
     
@@ -504,6 +536,15 @@ def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
                         fusion_json_uri=fusion_json_uri, output_bucket=output_bucket, model=model)
     
     raw_state = llm_summary_graph.invoke(state)
+
+    # Visualize graph + upload to MinIO
+    viz = visualize_summary_agent(output_bucket, clip_id)
+    # Log to ZenML UI (shows URIs)
+    log_metadata({
+        "summary_graph_mermaid": viz["mermaid_text"],
+        "summary_graph_png_uri": viz["png_uri"],
+    })
+
     final_state = SummaryState.model_validate(raw_state)
     assert final_state.is_complete, "Summary agent failed"
     

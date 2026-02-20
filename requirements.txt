@@ -15,3 +15,5 @@ openscenesense_ollama
 langgraph
 openscenesense_ollama
 pytoony
+matplotlib
+pygraphviz
