@@ -37,11 +37,12 @@ VIDEO_CLIP_TMP_DIR = "/tmp/evisr_video_clips"
 
 # Kafka
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-KAFKA_TOPIC = "videoclips"
-
+KAFKA_TOPIC = "Video-segments"
+num_partitions = 1
 # Polling
 POLL_INTERVAL_SECONDS = 3
 STATE_FILE = "state.json"
 
 # DETECTION OUTPUT VIDEO
 SAVE_MP4= False   #False for PRODUCTION USE 
+MAP_BUCKET= "camera-map"
