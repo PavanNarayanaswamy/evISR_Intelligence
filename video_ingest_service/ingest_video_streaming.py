@@ -56,6 +56,12 @@ class StreamIngestWorker:
         
         self.restart_attempts = 0
         self.last_start_ts = None
+        self.restarting = False
+        
+        logger.info(
+            f"[PORT {self.port}] Worker initialized | "
+            f"bucket={self.bucket} | buffer_dir={self.buffer_dir}"
+        )
 
     def start_ffmpeg(self):
         output_pattern = os.path.join(self.buffer_dir, "%Y%m%d_%H%M%S.ts")
@@ -85,6 +91,26 @@ class StreamIngestWorker:
         )
         self.restart_attempts = 0
         self.last_start_ts = time.time()
+        
+    def stop_ffmpeg(self):
+        """
+        Gracefully stop the FFmpeg process
+        """
+        if self.process:
+            try:
+                logger.info(f"[PORT {self.port}] Stopping FFmpeg process")
+                self.process.terminate()
+                # Wait a bit for graceful termination
+                time.sleep(1)
+                if self.process.poll() is None:
+                    self.process.kill()  # Force kill if not terminated
+                self.process.wait()
+                self.process = None
+            except Exception as e:
+                logger.error(f"[PORT {self.port}] Error stopping FFmpeg: {e}")
+            finally:
+                self.active = False
+                self.process = None
 
     def ingest_loop(self):
         """
@@ -135,7 +161,7 @@ class StreamIngestWorker:
                 f"[PORT {self.port}] Stream inactive for {idle_time:.1f}s. Stopping FFmpeg."
             )
             if self.process:
-                self.process.terminate()
+                self.stop_ffmpeg()
             self.active = False
             
     def check_ffmpeg_health(self):
@@ -147,21 +173,28 @@ class StreamIngestWorker:
             logger.error(
                 f"[PORT {self.port}] FFmpeg crashed with code {retcode}"
             )
+            self.stop_ffmpeg()
             self.active = False
 
     def restart_ffmpeg(self):
-        self.restart_attempts += 1
-
-        backoff = min(10 * self.restart_attempts, 60)
-        logger.warning(
-            f"[PORT {self.port}] Restarting FFmpeg in {backoff}s "
-            f"(attempt {self.restart_attempts})"
-        )
-
-        time.sleep(backoff)
-        self.start_ffmpeg()
-        self.active = True
-        self.last_activity_ts = time.time()
+        if self.restarting:  # Prevent concurrent restarts
+            return
+        
+        self.restarting = True
+        try:
+            self.restart_attempts += 1
+            backoff = min(10 * self.restart_attempts, 60)
+            logger.warning(
+                f"[PORT {self.port}] Restarting FFmpeg in {backoff}s "
+                f"(attempt {self.restart_attempts})"
+            )
+            time.sleep(backoff)
+            self.stop_ffmpeg()  # Ensure old process is stopped
+            self.start_ffmpeg()
+            self.active = True
+            self.last_activity_ts = time.time()
+        finally:
+            self.restarting = False
 
 
 
@@ -219,3 +252,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 

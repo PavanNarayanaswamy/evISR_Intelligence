@@ -4,11 +4,9 @@ import time
 import json
 import datetime
 from typing import Dict, Any
-
+from concurrent.futures import ThreadPoolExecutor
 from minio import Minio
-
 from utils import config
-
 from eventing.kafka_admin import KafkaAdmin
 from eventing.kafka_producer import KafkaProducerClient
 from utils.logger import get_logger
@@ -17,7 +15,6 @@ from io import BytesIO
 
 logger = get_logger(__name__)
 
-DEFAULT_STATE_FILE = "state.json"
 DEFAULT_EVENTS_LOG_FILE = "events_log.json"
 
 class EventingService:
@@ -32,15 +29,20 @@ class EventingService:
         minio_secure: bool,
         kafka_bootstrap_servers: str,
         kafka_topic: str,
-        state_file: str = DEFAULT_STATE_FILE,
         events_log_file: str = DEFAULT_EVENTS_LOG_FILE,
         poll_interval_seconds: int = 3,
     ):
         self.kafka_topic = kafka_topic
         self.poll_interval_seconds = poll_interval_seconds
-        self.state_file = state_file
         self.events_log_file = events_log_file
         self.stream_partition_map = self.load_partition_map()
+
+        # Thread pool for parallel bucket workers
+        self.executor = ThreadPoolExecutor(max_workers=8)
+        self.bucket_futures = {}
+        # create state directory if not exists
+        os.makedirs(config.STATE_DIR, exist_ok=True)
+
         # MinIO client
         self.minio_client = Minio(
             minio_endpoint,
@@ -54,40 +56,37 @@ class EventingService:
         self.kafka_producer = KafkaProducerClient(kafka_bootstrap_servers)
         # Ensure partition-map bucket exists
         if not self.minio_client.bucket_exists(config.MAP_BUCKET):
-            logger.info(
-                f"Creating partition map bucket: {config.MAP_BUCKET}"
-            )
+            logger.info(f"Creating partition map bucket: {config.MAP_BUCKET}")
             self.minio_client.make_bucket(config.MAP_BUCKET)
+    
+    # per-stream state helpers
+    def _state_file(self, stream_id: str) -> str:
+        safe_stream_id = stream_id.replace("/", "_")
+        return os.path.join(config.STATE_DIR, f"state_{safe_stream_id}.json")
+    
+    def load_stream_state(self, stream_id: str) -> Dict[str, Any]:
+        path = self._state_file(stream_id)
 
-    # State handling
-    def load_state(self) -> Dict[str, Any]:
-        if not os.path.exists(self.state_file):
-            logger.info(f"State file {self.state_file} does not exist. Starting with empty state.")
-            return {}
+        if not os.path.exists(path):
+            return {"last_sequence": 0, "processed_objects": []}
+
         try:
-            with open(self.state_file, "r") as f:
+            with open(path, "r") as f:
                 state = json.load(f)
-            logger.info(f"Loaded state from {self.state_file}")
             return state
         except Exception as e:
-            logger.error(f"Failed to load state file {self.state_file}: {e}", exc_info=True)
-            return {}
+            logger.error(f"Failed to load state for {stream_id}: {e}", exc_info=True)
+            return {"last_sequence": 0, "processed_objects": []}
+        
+    def save_stream_state(self, stream_id: str, state: Dict[str, Any]) -> None:
+        path = self._state_file(stream_id)
 
-    def save_state(self, state: Dict[str, Any]) -> None:
         try:
-            with open(self.state_file, "w") as f:
+            with open(path, "w") as f:
                 json.dump(state, f, indent=2)
-            logger.debug(f"Saved state to {self.state_file}")
+            logger.debug(f"Saved state to {path}")
         except Exception as e:
-            logger.error(f"Failed to save state file {self.state_file}: {e}", exc_info=True)
-
-    def ensure_stream_state(self, state: Dict[str, Any], stream_id: str) -> None:
-        if stream_id not in state:
-            logger.info(f"Initializing state for stream_id: {stream_id}")
-            state[stream_id] = {
-                "last_sequence": 0,
-                "processed_objects": []
-            }
+            logger.error(f"Failed to save state for {stream_id}: {e}", exc_info=True)
 
     # Event log handling
     def append_event_log(self, event: dict) -> None:
@@ -138,7 +137,6 @@ class EventingService:
     # Processing
     def process_bucket(
         self,
-        state: Dict[str, Any],
         bucket: str,
         duration_seconds: int,
     ) -> None:
@@ -165,7 +163,7 @@ class EventingService:
                 continue
 
             # ----------------------------------------
-            # ⭐ DERIVE STREAM ID FROM OBJECT PATH
+            # DERIVE STREAM ID FROM OBJECT PATH
             # ----------------------------------------
             # object example:
             # port-5001/2026/02/23/...ts
@@ -174,22 +172,20 @@ class EventingService:
             port = port_prefix.replace("port-", "")
 
             stream_id = f"stream-{port}"
+            #  per-stream state
+            stream_state = self.load_stream_state(stream_id)
 
-            # ensure state AFTER stream detected
-            self.ensure_stream_state(state, stream_id)
-
-            # Deduplication
-            if object_name in state[stream_id]["processed_objects"]:
+            if object_name in stream_state["processed_objects"]:
                 continue
 
-            state[stream_id]["last_sequence"] += 1
+            stream_state["last_sequence"] += 1
 
             event = self.build_event(
                 stream_id=stream_id,
                 bucket=bucket,
                 object_name=object_name,
                 clip_name=clip_name,
-                sequence_number=state[stream_id]["last_sequence"],
+                sequence_number=stream_state["last_sequence"],
                 duration_seconds=duration_seconds,
             )
 
@@ -220,8 +216,8 @@ class EventingService:
 
             append_event_to_file(event, self.events_log_file)
 
-            state[stream_id]["processed_objects"].append(object_name)
-            self.save_state(state)
+            stream_state["processed_objects"].append(object_name)
+            self.save_stream_state(stream_id, stream_state)
 
     def start(self) -> None:
         """
@@ -230,7 +226,6 @@ class EventingService:
 
         logger.info("Starting Eventing Service...")
         logger.info(f"Kafka topic: {self.kafka_topic}")
-        logger.info(f"Writing state to: {self.state_file}")
         logger.info(f"Writing event payloads to: {self.events_log_file}")
 
         # --------------------------------------------------
@@ -251,7 +246,6 @@ class EventingService:
             )
             return
 
-        state = self.load_state()
 
         # --------------------------------------------------
         # Dynamic polling loop
@@ -261,32 +255,41 @@ class EventingService:
             try:
                 buckets = self.minio_client.list_buckets()
 
+                # cleanup finished futures
+                for bucket_name in list(self.bucket_futures.keys()):
+                    if self.bucket_futures[bucket_name].done():
+                        self.bucket_futures.pop(bucket_name)
+                
+                # ------------------------------------------
+                # STREAMING CAMERAS
+                # raw-streaming-video*
+                # ------------------------------------------
                 for bucket in buckets:
+                    # Skip if already running
+                    if bucket.name in self.bucket_futures:
+                        continue
 
-                    # ------------------------------------------
-                    # STREAMING CAMERAS
-                    # raw-streaming-video*
-                    # ------------------------------------------
-                    if bucket.name.startswith(
-                        config.STREAMING_MINIO_BUCKET
-                    ):
+                    if bucket.name.startswith(config.STREAMING_MINIO_BUCKET):
 
-                        self.process_bucket(
-                            state=state,
-                            bucket=bucket.name,
-                            duration_seconds=config.ROLLING_SECONDS,
+                        future = self.executor.submit(
+                            self.process_bucket,
+                            bucket.name,
+                            config.ROLLING_SECONDS,
                         )
+                        self.bucket_futures[bucket.name] = future
 
                     # ------------------------------------------
                     # OFFLINE VIDEO INGEST
                     # ------------------------------------------
                     elif bucket.name == config.VIDEO_CLIP_BUCKET:
 
-                        self.process_bucket(
-                            state=state,
-                            bucket=bucket.name,
-                            duration_seconds=config.VIDEO_CLIP_SEGMENT_SECONDS,
+                        future = self.executor.submit(
+                            self.process_bucket,
+                            bucket.name,
+                            config.VIDEO_CLIP_SEGMENT_SECONDS,
                         )
+
+                        self.bucket_futures[bucket.name] = future
 
             except Exception as e:
                 logger.error(
@@ -309,7 +312,7 @@ class EventingService:
             self.kafka_topic
         )
 
-        # ✅ FIRST CAMERA USES EXISTING PARTITION 0
+        # FIRST CAMERA USES EXISTING PARTITION 0
         if current == 1 and len(self.stream_partition_map) == 0:
             new_partition = 0
         else:

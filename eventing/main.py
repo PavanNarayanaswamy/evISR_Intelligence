@@ -16,7 +16,6 @@ def main():
             minio_secure=config.MINIO_SECURE,
             kafka_bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
             kafka_topic=config.KAFKA_TOPIC,
-            state_file=config.STATE_FILE,
             events_log_file="events_log.json",
             poll_interval_seconds=config.POLL_INTERVAL_SECONDS,
         )

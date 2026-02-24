@@ -42,6 +42,7 @@ num_partitions = 1
 # Polling
 POLL_INTERVAL_SECONDS = 3
 STATE_FILE = "state.json"
+STATE_DIR= "state_files"
 
 # DETECTION OUTPUT VIDEO
 SAVE_MP4= False   #False for PRODUCTION USE 
