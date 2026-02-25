@@ -91,10 +91,21 @@ pip install -r requirements.txt
 
 ## STEP 4: Start Video Streaming
 
-This command streams a `.ts` file (with embedded KLV) over UDP using FFmpeg.
+### Run Stream Video
 
+#### Multiple Streams
 ```bash
-PYTHONPATH=. python3 stream_video.py
+python stream_video.py --mode multi --count <number_of_streams>
+```
+
+#### Single Stream (Default Port)
+```bash
+python stream_video.py
+```
+
+#### Single Stream on a Specific Port
+```bash
+PYTHONPATH=. python3 stream_video.py --mode single --port <port_number>
 ```
 
 This simulates a live ISR video feed.
@@ -159,7 +170,7 @@ ZenML is used for orchestrating of streaming pipelines and experimentation.
 ### 8.2 Python Kafka Consumer
 
 ```bash
-PYTHONPATH=. python3 kafka_consumer/consumer.py --live
+PYTHONPATH=. python3 kafka_consumer/consumer_autoscaler.py
 ```
 
 ---

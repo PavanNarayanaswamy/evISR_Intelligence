@@ -1,7 +1,7 @@
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-KAFKA_TOPIC_INPUT = "videoclips"
+KAFKA_TOPIC_INPUT = "Video-segments"
 KAFKA_TOPIC_OUTPUT = "pipeline-results"
-KAFKA_GROUP_ID = "klv-metadata-consumer"
+KAFKA_GROUP_ID = "evISR-consumer"
 
 MINIO_ENDPOINT = "localhost:9000"
 MINIO_ACCESS_KEY = "minioadmin"

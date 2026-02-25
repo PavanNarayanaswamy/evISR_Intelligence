@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 # -------------------------------------------------
 # DOWNLOAD STEP
 # -------------------------------------------------
-@step
+@step(enable_cache=False)
 def minio_segmented_clip(clip_id: str, clip_uri: str) -> Tuple[Annotated[str, "video_path"], Annotated[float, "video_duration"]]:
     """
     Downloads TS from MinIO as ./<clip_id>.ts
@@ -145,7 +145,7 @@ def decode_metadata(
                     logger.error(f"Error cleaning up {path} for clip_id: {clip_id}: {ce}", exc_info=True)
 '''
 
-@step
+@step(enable_cache=False)
 def klv_extraction_agent(
     ts_path: str,
     clip_id: str,

@@ -1,0 +1,8 @@
+server:
+  port: 8081
+auth:
+  type: disabled
+kafka:
+  clusters:
+    - name: local-kraft
+      bootstrapServers: localhost:9092

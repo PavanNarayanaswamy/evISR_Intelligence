@@ -219,6 +219,9 @@ class EventingService:
             stream_state["processed_objects"].append(object_name)
             self.save_stream_state(stream_id, stream_state)
 
+    # ==================================================
+    # MAIN LOOP
+    # ==================================================
     def start(self) -> None:
         """
         Ensures topic exists and starts dynamic polling loop.
@@ -246,6 +249,8 @@ class EventingService:
             )
             return
 
+        self.stream_partition_map = self.load_partition_map()
+        # self.reconcile_partition_map()
 
         # --------------------------------------------------
         # Dynamic polling loop
@@ -299,6 +304,9 @@ class EventingService:
 
             time.sleep(self.poll_interval_seconds)
 
+    # ==================================================
+    # PARTITION MANAGEMENT
+    # ==================================================
     def get_or_create_partition(self, stream_id):
 
         self.stream_partition_map = self.load_partition_map()
@@ -317,10 +325,18 @@ class EventingService:
             new_partition = 0
         else:
             new_partition = current
+            logger.info(f"Increasing partitions {current} → {current + 1}")
             self.kafka_admin.increase_partitions(
                 self.kafka_topic,
                 current + 1,
             )
+            
+            self.kafka_admin.wait_for_partition(
+                self.kafka_topic,
+                new_partition,
+            )
+
+            # self.kafka_producer.refresh_metadata()
 
             # force metadata refresh
             self.kafka_producer.producer.list_topics(
@@ -334,8 +350,26 @@ class EventingService:
         self.stream_partition_map[stream_id] = new_partition
         self.save_partition_map(self.stream_partition_map)
 
+        logger.info(f"Mapped {stream_id} → partition {new_partition}")
+        
         return new_partition
 
+    def reconcile_partition_map(self):
+
+        actual = self.kafka_admin.get_partition_count(self.kafka_topic)
+
+        cleaned = {}
+
+        for stream, part in self.stream_partition_map.items():
+            if part < actual:
+                cleaned[stream] = part
+            else:
+                logger.warning(f"Removing stale mapping {stream} → {part}")
+
+        if cleaned != self.stream_partition_map:
+            self.stream_partition_map = cleaned
+            self.save_partition_map(cleaned)
+            
     def load_partition_map(self):
         try:
             obj = self.minio_client.get_object(

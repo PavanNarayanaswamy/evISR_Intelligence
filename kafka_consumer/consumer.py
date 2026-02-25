@@ -5,6 +5,7 @@ import sys
 import time
 import threading
 from queue import Queue
+from collections import defaultdict
 from kafka import KafkaConsumer, KafkaAdminClient
 from kafka.admin import NewTopic
 from kafka.errors import TopicAlreadyExistsError
@@ -21,33 +22,64 @@ if parent_dir not in sys.path:
 from zenml_pipeline.pipeline_trigger import trigger_pipeline
 
 # ==================================================
-# EVENT QUEUE
+# PARTITION BASED EXECUTION STRUCTURE
 # ==================================================
-event_queue = Queue()
 
+# partition -> Queue
+partition_queues = defaultdict(Queue)
+
+# partition -> worker thread
+partition_workers = {}
 
 # ==================================================
-# PIPELINE WORKER (SEQUENTIAL EXECUTION)
+# PIPELINE Trigger
 # ==================================================
-def pipeline_worker():
-    logger.info("[WORKER] Pipeline worker started")
+def trigger_partition_pipeline(event, partition):
+    pipeline_name = f"isr_pipeline_{event['stream_id']}"
+
+    logger.info(
+        f"Triggering pipeline {pipeline_name} "
+        f"for partition {partition}"
+    )
+
+    trigger_pipeline(
+        event,
+        pipeline_name=pipeline_name
+    )
+
+# ==================================================
+# PARTITION WORKER (SEQUENTIAL PER PARTITION)
+# ==================================================
+def partition_worker(partition: int):
+    logger.info(f"[WORKER-{partition}] Started")
+
+    queue = partition_queues[partition]
 
     while True:
-        event = event_queue.get()
+        event = queue.get()
 
         if event is None:
             break
 
         try:
-            logger.info(f"[WORKER] Running pipeline for {event['clip_id']}")
-            trigger_pipeline(event)
-            logger.info(f"[WORKER] Completed pipeline for {event['clip_id']}")
+            logger.info(
+                f"[WORKER-{partition}] Running pipeline for {event['clip_id']}"
+            )
+
+            trigger_partition_pipeline(event, partition)
+
+            logger.info(
+                f"[WORKER-{partition}] Completed pipeline for {event['clip_id']}"
+            )
+
         except Exception as e:
-            logger.error(f"Pipeline failed for {event['clip_id']}: {e}")
+            logger.error(
+                f"[WORKER-{partition}] Failed {event['clip_id']}: {e}",
+                exc_info=True
+            )
 
-        event_queue.task_done()
-
-
+        queue.task_done()
+        
 # ==================================================
 # ENSURE KAFKA TOPICS
 # ==================================================
@@ -55,7 +87,7 @@ def ensure_topics_exist():
     try:
         admin_client = KafkaAdminClient(
             bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
-            client_id="klv-metadata-admin",
+            client_id="evISR-admin",
         )
         existing_topics = admin_client.list_topics()
         topics_to_create = []
@@ -105,33 +137,37 @@ def process_historical_events():
         consumer_timeout_ms=3000,
     )
 
-    logger.info("[KAFKA] Processing ALL historical events...")
-
-    processed = 0
+    logger.info("[KAFKA] Processing historical events")
 
     for message in consumer:
         event = message.value
+        partition = message.partition
 
         if not event.get("has_klv", False):
             continue
 
-        logger.info(f"[KAFKA] Queueing pipeline for {event['clip_id']}")
-        event_queue.put(event)
-        processed += 1
+        if partition not in partition_workers:
+            logger.info(f"Spawning worker for partition {partition}")
+
+            worker = threading.Thread(
+                target=partition_worker,
+                args=(partition,),
+                daemon=True,
+            )
+            worker.start()
+
+            partition_workers[partition] = worker
+
+        partition_queues[partition].put(event)
 
     consumer.close()
-    logger.info(f"[KAFKA] Done. Total queued: {processed}")
-
+    logger.info("[KAFKA] Historical processing finished")
 
 # ==================================================
 # MAIN
 # ==================================================
 def main():
     ensure_topics_exist()
-
-    # Start pipeline worker thread
-    worker_thread = threading.Thread(target=pipeline_worker, daemon=True)
-    worker_thread.start()
 
     parser = argparse.ArgumentParser(
         description="Kafka Consumer for KLV Metadata Extraction"
@@ -160,6 +196,7 @@ def main():
     consumer = KafkaConsumer(
         config.KAFKA_TOPIC_INPUT,
         bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
+        group_id=config.KAFKA_GROUP_ID,
         value_deserializer=lambda m: json.loads(m.decode("utf-8")),
         auto_offset_reset="latest",
         enable_auto_commit=True,
@@ -168,13 +205,32 @@ def main():
     logger.info("[KAFKA] Listening for new clip events (live mode)...")
 
     for message in consumer:
-        event = message.value
+            event = message.value
+            partition = message.partition
 
-        if not event.get("has_klv", False):
-            continue
+            if not event.get("has_klv", False):
+                continue
 
-        logger.info(f"[KAFKA] Queueing pipeline for {event['clip_id']}")
-        event_queue.put(event)
+            logger.info(
+                f"[KAFKA] Received {event['clip_id']} "
+                f"from partition {partition}"
+            )
+
+            # Spawn partition worker dynamically
+            if partition not in partition_workers:
+                logger.info(f"Spawning worker for partition {partition}")
+
+                worker = threading.Thread(
+                    target=partition_worker,
+                    args=(partition,),
+                    daemon=True,
+                )
+                worker.start()
+
+                partition_workers[partition] = worker
+
+            # Enqueue event to correct partition worker
+            partition_queues[partition].put(event)
 
 
 if __name__ == "__main__":

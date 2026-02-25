@@ -1,5 +1,5 @@
 # zenml_pipeline/pipeline_trigger.py
-from zenml_pipeline.pipeline import isr_pipeline
+from zenml_pipeline.pipeline import run_isr_pipeline
 from zenml.client import Client
 import os
 import sys
@@ -42,7 +42,7 @@ def get_artifact_value(artifact_response):
         return None
 
 
-def trigger_pipeline(event: dict):
+def trigger_pipeline(event: dict, pipeline_name: str) -> None:
     """Trigger ZenML pipeline and send result to output topic"""
     
     producer = KafkaProducer(
@@ -53,7 +53,7 @@ def trigger_pipeline(event: dict):
     try:
         logger.info(f"[PIPELINE] Starting pipeline for clip: {event['clip_id']}")
 
-        pipeline_run = isr_pipeline(
+        pipeline_run = run_isr_pipeline(
             clip_id=event["clip_id"],
             clip_uri=event["clip_uri"],
             jars=JARS,
@@ -67,6 +67,7 @@ def trigger_pipeline(event: dict):
             hit_counter_max=config.HIT_COUNTER_MAX,
             initialization_delay=config.INITIALIZATION_DELAY,
             distance_function=config.DISTANCE_FUNCTION,
+            pipeline_name=pipeline_name
         )
 
         extraction_uri = None
