@@ -106,11 +106,9 @@ class StreamIngestWorker:
                 file.replace(".ts", ""), "%Y%m%d_%H%M%S"
             )
 
-            ist_time = segment_time + datetime.timedelta(hours=5, minutes=30)
-
             object_name = (
                 f"port-{self.port}/"
-                f"{ist_time.strftime('%Y/%m/%d/%H')}/"
+                f"{segment_time.strftime('%Y/%m/%d/%H')}/"
                 f"{file}"
             )
 

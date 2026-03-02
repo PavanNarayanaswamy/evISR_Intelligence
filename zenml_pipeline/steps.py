@@ -1,3 +1,5 @@
+from more_itertools import partition
+
 from zenml import step
 from pathlib import Path
 import json
@@ -17,6 +19,7 @@ from fusion_context.fusion import TemporalFusion
 from fusion_context.semantic_fusion import SemanticFusion
 from video_summary.summary_gen import VideoLLMSummarizer
 from utils import config
+from utils.time_partition import build_partition_path_from_clip_id
 
 logger = get_logger(__name__)
 
@@ -106,12 +109,12 @@ def decode_metadata(
 
         with open(output_json, "w") as f:
             json.dump(decoded, f, indent=2)
-        now = datetime.datetime.now()  # local time
+            
+        partition = build_partition_path_from_clip_id(clip_id)
         object_name = (
-            f"decoding/"
-            f"{now.strftime('%Y/%m/%d/%H')}/"
-            f"{clip_id}.json"
+            f"decoding/{partition}/{clip_id}.json"
         )
+        
         upload_output(
             output_bucket,
             object_name,
@@ -240,12 +243,10 @@ def fusion_context(
         with open(raw_fusion_path, "w") as f:
             json.dump(fusion_output, f, indent=2)
 
-        now = datetime.datetime.now()
+        partition = build_partition_path_from_clip_id(clip_id)
 
         raw_object_name = (
-            f"raw_fusion/"
-            f"{now.strftime('%Y/%m/%d/%H')}/"
-            f"{clip_id}.json"
+            f"raw_fusion/{partition}/{clip_id}.json"
         )
 
         upload_output(
@@ -275,9 +276,7 @@ def fusion_context(
             )
 
         semantic_object_name = (
-            f"semantic_fusion/"
-            f"{now.strftime('%Y/%m/%d/%H')}/"
-            f"{clip_id}.json"
+            f"semantic_fusion/{partition}/{clip_id}.json"
         )
 
         upload_output(
@@ -361,11 +360,9 @@ def llm_summary(
         # -------------------------------------------------
         # Upload summary
         # -------------------------------------------------
-        now = datetime.datetime.now()
+        partition = build_partition_path_from_clip_id(clip_id)
         object_name = (
-            f"summary/"
-            f"{now.strftime('%Y/%m/%d/%H')}/"
-            f"{clip_id}.txt"
+            f"summary/{partition}/{clip_id}.txt"
         )
 
         upload_output(

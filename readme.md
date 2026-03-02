@@ -6,6 +6,13 @@
 
 The system is built to simulate real-world ISR (Intelligence, Surveillance, Reconnaissance) workflows using open-source components and is fully deployable on a local development environment (WSL / Ubuntu).
 
+The platform also includes an Agentic AI execution layer built using LangGraph. 
+This layer wraps key processing stages (KLV extraction, object detection, fusion, and summarization) 
+into structured state-driven execution graphs with strong validation and deterministic transitions.
+
+Instead of executing linear function calls, each intelligence stage is implemented as a stateful 
+graph-based agent, enabling modularity, traceability, lifecycle management, and future extensibility.
+
 ---
 
 ## Project Root
@@ -89,7 +96,20 @@ pip install -r requirements.txt
 
 ---
 
-## STEP 4: Start Video Streaming
+## STEP 4: Install Agentic AI Dependencies (Graphviz)
+
+LangGraph requires Graphviz for graph compilation and visualization.
+
+```bash
+sudo apt update
+sudo apt install graphviz graphviz-dev
+```
+This installs the Graphviz system libraries required for LangGraph DAG compilation.
+
+---
+
+
+## STEP 5: Start Video Streaming
 
 This command streams a `.ts` file (with embedded KLV) over UDP using FFmpeg.
 
@@ -101,9 +121,9 @@ This simulates a live ISR video feed.
 
 ---
 
-## STEP 5: Video Ingestion
+## STEP 6: Video Ingestion
 
-### 5.1 Live Streaming Ingestion
+### 6.1 Live Streaming Ingestion
 
 Segments the video stream into 30-second clips and uploads them to MinIO.
 
@@ -111,7 +131,7 @@ Segments the video stream into 30-second clips and uploads them to MinIO.
 PYTHONPATH=. python3 video_ingest_service/ingest_video_streaming.py
 ```
 
-### 5.2 Offline Video Clip Ingestion
+### 6.2 Offline Video Clip Ingestion
 
 Splits a single video file into fixed-duration (30-second) clips and uploads them to MinIO.
 
@@ -121,7 +141,7 @@ PYTHONPATH=. python3 video_ingest_service/ingest_video_clip.py
 
 ---
 
-## STEP 6: Kafka Eventing Service
+## STEP 7: Kafka Eventing Service
 
 Generates Kafka events for each ingested video clip and maintains ingestion state.
 
@@ -137,7 +157,7 @@ Kafka Topic:
 - `videoclips`
 
 ---
-## STEP 7: ZenML Setup (Pipeline Orchestration)
+## STEP 8: ZenML Setup (Pipeline Orchestration)
 
 ```bash
 zenml init
@@ -148,15 +168,15 @@ ZenML is used for orchestrating of streaming pipelines and experimentation.
 
 ---
 
-## STEP 8: Consume Kafka Events (Debug / Validation)
+## STEP 9: Consume Kafka Events (Debug / Validation)
 
-### 8.1 Kafka CLI Consumer
+### 9.1 Kafka CLI Consumer
 
 ```bash
 /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server 127.0.0.1:9092   --topic videoclips   --partition 0   --offset latest
 ```
 
-### 8.2 Python Kafka Consumer
+### 9.2 Python Kafka Consumer
 
 ```bash
 PYTHONPATH=. python3 kafka_consumer/consumer.py --live

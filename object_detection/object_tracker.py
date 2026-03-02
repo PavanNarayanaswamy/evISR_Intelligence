@@ -7,6 +7,7 @@ from typing import Any
 from minio import Minio
 from rfdetr.util.coco_classes import COCO_CLASSES
 from zenml_pipeline.minio_utils import upload_output
+from utils.time_partition import build_partition_path_from_clip_id
 
 
 class ObjectTracker:
@@ -129,7 +130,7 @@ class ObjectTracker:
             raise RuntimeError(
                 "write_outputs() called before start()/process()"
             )
-        now = datetime.now()
+        partition = build_partition_path_from_clip_id(self.clip_id)
 
         json_uri = None
 
@@ -142,7 +143,7 @@ class ObjectTracker:
                 json.dump(self._json_data, f, indent=2)
 
             object_name = (
-                f"detection/{now.strftime('%Y/%m/%d/%H')}/{self.clip_id}.json"
+                f"detection/{partition}/{self.clip_id}.json"
             )
 
             upload_output(
@@ -163,11 +164,12 @@ class ObjectTracker:
         if self.output_path is None:
             raise RuntimeError("output_path required for MP4")
 
-        now = datetime.now()
+        partition = build_partition_path_from_clip_id(self.clip_id)
+
         output_dir = os.path.join(
             self.output_path,
             "detection",
-            now.strftime("%Y/%m/%d/%H"),
+            partition,
         )
         os.makedirs(output_dir, exist_ok=True)
 

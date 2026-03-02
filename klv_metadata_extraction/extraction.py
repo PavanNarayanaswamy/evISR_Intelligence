@@ -5,6 +5,7 @@ from minio import Minio
 import datetime
 from utils.logger import get_logger
 from zenml_pipeline.minio_utils import upload_output
+from utils.time_partition import build_partition_path_from_clip_id
 
 logger = get_logger(__name__)
 
@@ -64,12 +65,10 @@ class Extraction:
         logger.info(f"Extracted {klv_file.stat().st_size:,} bytes of KLV data")
 
         # Upload to MinIO
-        now = datetime.datetime.now()  # local time
+        partition = build_partition_path_from_clip_id(clip_id)
 
         object_name = (
-            f"extraction/"
-            f"{now.strftime('%Y/%m/%d/%H')}/"
-            f"{clip_id}.klv"
+            f"extraction/{partition}/{clip_id}.klv"
         )
 
         upload_output(
