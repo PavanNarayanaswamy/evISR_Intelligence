@@ -309,7 +309,7 @@ class EventingService:
     # ==================================================
     def get_or_create_partition(self, stream_id):
 
-        self.stream_partition_map = self.load_partition_map()
+        # self.stream_partition_map = self.load_partition_map()
 
         if stream_id in self.stream_partition_map:
             return self.stream_partition_map[stream_id]

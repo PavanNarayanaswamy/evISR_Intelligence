@@ -17,6 +17,15 @@ class SummaryState(BaseModel):
     
     # Parsed data
     fusion_context: Optional[Dict[str, Any]] = Field(default=None)
+
+    severity_score: Optional[float] = Field(
+        default=None,
+        description="LLM-evaluated severity score (0-10)"
+    )
+    severity_label: Optional[str] = Field(
+        default=None,
+        description="Severity classification label"
+    )
     
     # Output
     summary_uri: Optional[str] = Field(default=None, description="MinIO summary URI")

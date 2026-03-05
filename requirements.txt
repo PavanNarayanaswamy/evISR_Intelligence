@@ -8,10 +8,14 @@ cv
 rfdetr==1.3.0
 supervision
 ffmpeg-python
-norfair
+norfair==2.3.0
 reverse_geocoder
 pytoony
 openscenesense_ollama
 langgraph
 openscenesense_ollama
 pytoony
+matplotlib
+pygraphviz
+flask
+folium

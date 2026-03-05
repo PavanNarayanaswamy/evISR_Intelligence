@@ -64,7 +64,7 @@ def create_isr_pipeline(pipeline_name: str):
 
         # Fusion Context (TS + KLV + Detections)
         # -----------------------------
-        fusion_json = fusion_context_agent(
+        fusion_json, geo_coordinates = fusion_context_agent(
             clip_id=clip_id,
             video_duration=video_duration,
             klv_json_uri=klv_decoding_uri,
@@ -76,7 +76,7 @@ def create_isr_pipeline(pipeline_name: str):
         
         # LLM Video Summary (TS + Fusion Context)
         # -----------------------------
-        summary_uri = llm_summary_agent(
+        summary_uri, severity_score, severity_label = llm_summary_agent(
             clip_id=clip_id,
             ts_path=ts_path,
             fusion_json_uri=fusion_json,

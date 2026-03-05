@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph, START, END
 from utils.logger import get_logger
 
 from zenml_pipeline.minio_utils import download_file, upload_output
-from video_summary.summary_gen import VideoLLMSummarizer
+from video_summary.summary_gen import VideoLLMSummarizer,SeverityEvaluator
 
 from .state import SummaryState
 
@@ -53,12 +53,21 @@ def run_llm_node(state: SummaryState) -> SummaryState:
         model=model,
         video_path=ts_path,
     )
+    severity_result = SeverityEvaluator.llm_judge(summary)
+
+    severity_score_llm = severity_result.get("severity_score", 0)
+    severity_label_llm = severity_result.get("severity_label", "UNKNOWN")
 
     summary_path = Path("/tmp") / f"{clip_id}_summary.txt"
     summary_path.write_text(summary)
     logger.info(f"[SUMMARY_AGENT] Wrote summary to {summary_path}")
 
-    return state.model_copy(update={"summary_path": str(summary_path), "updated_at": datetime.datetime.now()})
+    return state.model_copy(update={
+    "summary_path": str(summary_path),
+    "severity_score": severity_score_llm,
+    "severity_label": severity_label_llm,
+    "updated_at": datetime.datetime.now()
+})
 
 
 def upload_node(state: SummaryState) -> SummaryState:

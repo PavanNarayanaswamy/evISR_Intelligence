@@ -6,6 +6,8 @@ import os
 import datetime
 import subprocess
 import math
+from typing import Dict, Any
+from typing_extensions import Annotated
 
 from .minio_utils import download_segment, upload_output, get_minio_client, download_file
 from klv_metadata_extraction.decoding import JmisbDecoder
@@ -152,8 +154,8 @@ def klv_extraction_agent(
     jars: List[str],
     output_bucket: str,
 ) -> Tuple[
-    Annotated[str, "extraction_uri"],
-    Annotated[str, "decoding_uri"],
+    Annotated[str, "klv_extraction_uri"],
+    Annotated[str, "klv_decoding_uri"],
 ]:
     """ZenML step wrapper with Pydantic validation."""
     
@@ -239,7 +241,7 @@ def object_detection_agent(
     confidence_threshold: float, distance_threshold: int, hit_counter_max: int,
     initialization_delay: int, distance_function: str,
 ) -> Tuple[
-    Annotated[str, "det_json_uri"],
+    Annotated[str, "detection_uri"],
     Annotated[float, "fps"],
 ]:
     state = DetectionState(
@@ -386,27 +388,46 @@ def fusion_context(
                     )
 '''
 @step(enable_cache=False)
-def fusion_context_agent(clip_id: str, video_duration: float, klv_json_uri: str,
-                        det_json_uri: str, output_bucket: str, fps: float) -> Annotated[str, "fusion_uri"]:
-    """
-    ZenML step boundary for context fusion.
-    Actual fusion logic runs inside the fusion agent (LangGraph).
-    """
-    logger.info(
-        f"[ZENML] Fusion context step clip_id={clip_id} "
-        f"klv_json_uri={klv_json_uri} det_json_uri={det_json_uri}"
-        f"fps={fps}"
-    )
+def fusion_context_agent(
+    clip_id: str,
+    video_duration: float,
+    klv_json_uri: str,
+    det_json_uri: str,
+    output_bucket: str,
+    fps: float,
+) -> tuple[
+    Annotated[str, "fusion_uri"],
+    Annotated[Dict[str, float], "geo_coordinates"],
+]:
 
-    state = FusionState(clip_id=clip_id, video_duration=video_duration,
-                       klv_json_uri=klv_json_uri, det_json_uri=det_json_uri,
-                       output_bucket=output_bucket, fps=fps)
+    logger.info(f"[ZENML] Fusion context step clip_id={clip_id}")
+
+    state = FusionState(
+        clip_id=clip_id,
+        video_duration=video_duration,
+        klv_json_uri=klv_json_uri,
+        det_json_uri=det_json_uri,
+        output_bucket=output_bucket,
+        fps=fps,
+    )
 
     raw_state = fusion_graph.invoke(state)
     final_state = FusionState.model_validate(raw_state)
+
     assert final_state.is_complete, "Fusion agent failed"
-    
-    return final_state.fusion_uri
+
+    # Extract geo context
+    semantic_data = final_state.semantic_fusion
+    geo_context = semantic_data.get("geo_context", {})
+
+    geo_coordinates = {
+        "start_latitude": geo_context.get("start_latitude"),
+        "start_longitude": geo_context.get("start_longitude"),
+        "end_latitude": geo_context.get("end_latitude"),
+        "end_longitude": geo_context.get("end_longitude"),
+    }
+
+    return final_state.fusion_uri, geo_coordinates
 # --------------------------------------------------
 # LLM SUMMARY STEP
 # --------------------------------------------------
@@ -490,7 +511,11 @@ def llm_summary(
 '''
 @step(enable_cache=False)
 def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
-                     output_bucket: str, model: str = "qwen3-vl:30b") -> Annotated[str, "summary_uri"]:
+                     output_bucket: str, model: str = "qwen3-vl:30b") -> tuple[
+    Annotated[str, "summary_uri"],
+    Annotated[float, "severity_score"],
+    Annotated[str, "severity_label"],
+]:
     """
     ZenML step boundary for LLM video summary.
     Actual summarization runs inside the LLM summary agent.
@@ -506,5 +531,15 @@ def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
     raw_state = llm_summary_graph.invoke(state)
     final_state = SummaryState.model_validate(raw_state)
     assert final_state.is_complete, "Summary agent failed"
-    
-    return final_state.summary_uri
+    try:
+        ts_file = Path(ts_path)
+        if ts_file.exists():
+            ts_file.unlink()
+            logger.info(f"[CLEANUP] Removed TS file: {ts_file}")
+    except Exception as e:
+        logger.warning(f"[CLEANUP] Failed to remove TS file: {e}")
+    return (
+        final_state.summary_uri,
+        final_state.severity_score,
+        final_state.severity_label,
+    )

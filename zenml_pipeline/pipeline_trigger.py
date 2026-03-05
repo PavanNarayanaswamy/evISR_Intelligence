@@ -96,17 +96,39 @@ def trigger_pipeline(event: dict, pipeline_name: str) -> None:
             )
 
         # ---- FUSION STEP ----
+        start_latitude = None
+        start_longitude = None
+        end_latitude = None
+        end_longitude = None
         if "fusion_context_agent" in steps:
             fusion_step = steps["fusion_context_agent"]
+
             fusion_uri = get_artifact_value(
                 fusion_step.outputs["fusion_uri"]
             )
+
+            geo_coordinates = get_artifact_value(
+                fusion_step.outputs["geo_coordinates"]
+            )
+
+            if geo_coordinates:
+                start_latitude = geo_coordinates.get("start_latitude")
+                start_longitude = geo_coordinates.get("start_longitude")
+                end_latitude = geo_coordinates.get("end_latitude")
+                end_longitude = geo_coordinates.get("end_longitude")
 
         # ---- SUMMARY STEP ----
         if "llm_summary_agent" in steps:
             summary_step = steps["llm_summary_agent"]
             summary_uri = get_artifact_value(
                 summary_step.outputs["summary_uri"]
+            )
+            severity_score = get_artifact_value(
+                summary_step.outputs["severity_score"]
+            )
+
+            severity_label = get_artifact_value(
+                summary_step.outputs["severity_label"]
             )
 
 
@@ -127,6 +149,12 @@ def trigger_pipeline(event: dict, pipeline_name: str) -> None:
 
         if summary_uri is None:
             logger.warning(f"Summary output missing for {event['clip_id']}")
+        if severity_score is None:
+            logger.warning(f"Severity score missing for {event['clip_id']}")
+        if severity_label is None:
+            logger.warning(f"Severity label missing for {event['clip_id']}")
+        if geo_coordinates is None:
+            logger.warning(f"Geo coordinates missing for {event['clip_id']}")  
 
         output_event = {
             "clip_id": event["clip_id"],
@@ -136,6 +164,12 @@ def trigger_pipeline(event: dict, pipeline_name: str) -> None:
             "object_detection_uri": detection_uri,
             "fusion_uri": fusion_uri,
             "summary_uri": summary_uri,
+            "start_latitude": start_latitude,
+            "start_longitude": start_longitude,
+            "end_latitude": end_latitude,
+            "end_longitude": end_longitude,
+            "severity_score": severity_score,
+            "severity_label": severity_label,
             "status": "success",
             "processed_at": datetime.datetime.now().isoformat(),
         }

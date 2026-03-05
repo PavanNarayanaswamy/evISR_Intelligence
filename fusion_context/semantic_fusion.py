@@ -313,15 +313,49 @@ class SemanticFusion:
         for t in structured_tracks:
             for e in t.get("geo_events", []):
                 if e.get("location_name"):
-                    geo_timeline.append((e["frame"], e["location_name"]))
+                    geo_timeline.append({
+                        "frame": e["frame"],
+                        "location_name": e["location_name"],
+                        "latitude": e.get("latitude"),
+                        "longitude": e.get("longitude"),
+                    })
 
-        geo_timeline.sort(key=lambda x: x[0])
+        geo_timeline.sort(key=lambda x: x["frame"])
 
-        geo_context = {
-            "start_location": geo_timeline[0][1] if geo_timeline else None,
-            "end_location": geo_timeline[-1][1] if geo_timeline else None,
-            "unique_locations": list({loc for _, loc in geo_timeline})
-        }
+        if geo_timeline:
+            start_event = geo_timeline[0]
+            end_event = geo_timeline[-1]
+
+            geo_context = {
+                "start_location": start_event["location_name"],
+                "start_latitude": start_event["latitude"],
+                "start_longitude": start_event["longitude"],
+
+                "end_location": end_event["location_name"],
+                "end_latitude": end_event["latitude"],
+                "end_longitude": end_event["longitude"],
+
+                "unique_locations": list(
+                    {e["location_name"] for e in geo_timeline}
+                ),
+                "unique_coordinates": list(
+                    {
+                        (e["latitude"], e["longitude"])
+                        for e in geo_timeline
+                    }
+                )
+            }
+        else:
+            geo_context = {
+                "start_location": None,
+                "start_latitude": None,
+                "start_longitude": None,
+                "end_location": None,
+                "end_latitude": None,
+                "end_longitude": None,
+                "unique_locations": [],
+                "unique_coordinates": []
+            }
 
 
         # --------------------------------------------

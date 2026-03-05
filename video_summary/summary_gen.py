@@ -1,6 +1,8 @@
 import logging
 from typing import Dict
 import json
+from urllib import response
+import ollama
 
 from openscenesense_ollama.models import AnalysisPrompts
 from openscenesense_ollama.analyzer import OllamaVideoAnalyzer
@@ -161,4 +163,45 @@ class VideoLLMSummarizer:
         results = analyzer.analyze_video(video_path)
 
         return results["summary"]
- 
+
+class SeverityEvaluator:
+    @staticmethod
+    def llm_judge(summary_text: str, model: str ="llava:latest") -> dict:
+        prompt = f"""
+            You are an ISR threat assessment model.
+
+            Based on the following ISR summary, rate operational severity from 0 to 5.
+
+            Severity Guidelines:
+            0-1: LOW — Routine activity with no significant concern.
+            2-3: MODERATE — Noticeable anomaly or potentially concerning behavior.
+            4-5: CRITICAL — Clear high-risk, dangerous, or security-threatening activity.
+
+            Return valid JSON only:
+
+            {{
+            "severity_score": number (0-5),
+            "severity_label": "LOW | MODERATE | CRITICAL"
+            }}
+
+            Summary:
+            {summary_text}
+            """
+
+        response = ollama.chat(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        format="json"
+    )
+
+        content = response["message"]["content"]
+        logger.info(f"LLM Severity Evaluation Response: {content}")
+        try:
+            return json.loads(content)
+        except Exception as e:
+            logger.info(f"JSON parse error: {e}")
+            return {
+                "severity_score": 0,
+                "severity_label": "UNKNOWN"
+            }
+        
