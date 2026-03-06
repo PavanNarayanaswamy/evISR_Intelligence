@@ -39,12 +39,12 @@ echo "=============================================" | tee -a $SYSTEM_LOG
 export ZENML_AUTO_OPEN_DASHBOARD=false
 export PYTHONPATH=.
 
-source venv/bin/activate
+source evISR_env/bin/activate
 
 # ==========================================
 # Ensure Infrastructure Running
 # ==========================================
-for service in minio kafka kafka-ui; do
+for service in minio kafka; do
     if ! systemctl is-active --quiet $service; then
         echo "[INFO] Starting $service..."
         sudo systemctl start $service

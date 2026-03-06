@@ -6,7 +6,7 @@ import time
 import threading
 from queue import Queue
 from collections import defaultdict
-from kafka import KafkaConsumer, KafkaAdminClient
+from kafka import KafkaConsumer, KafkaAdminClient, KafkaProducer
 from kafka.admin import NewTopic
 from kafka.errors import TopicAlreadyExistsError
 from utils.logger import get_logger
@@ -19,7 +19,7 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from zenml_pipeline.pipeline_trigger import trigger_pipeline
+from agents.swarm_client import SwarmClient
 
 # ==================================================
 # PARTITION BASED EXECUTION STRUCTURE
@@ -32,28 +32,17 @@ partition_queues = defaultdict(Queue)
 partition_workers = {}
 
 # ==================================================
-# PIPELINE Trigger
-# ==================================================
-def trigger_partition_pipeline(event, partition):
-    pipeline_name = f"isr_pipeline_{event['stream_id']}"
-
-    logger.info(
-        f"Triggering pipeline {pipeline_name} "
-        f"for partition {partition}"
-    )
-
-    trigger_pipeline(
-        event,
-        pipeline_name=pipeline_name
-    )
-
-# ==================================================
 # PARTITION WORKER (SEQUENTIAL PER PARTITION)
 # ==================================================
 def partition_worker(partition: int):
     logger.info(f"[WORKER-{partition}] Started")
 
     queue = partition_queues[partition]
+    swarm_client = SwarmClient()
+    producer = KafkaProducer(
+        bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+    )
 
     while True:
         event = queue.get()
@@ -66,7 +55,10 @@ def partition_worker(partition: int):
                 f"[WORKER-{partition}] Running pipeline for {event['clip_id']}"
             )
 
-            trigger_partition_pipeline(event, partition)
+            pipeline_name = f"isr_pipeline_{event['stream_id']}"
+            result = swarm_client.run_pipeline(event, pipeline_name)
+            producer.send(config.KAFKA_TOPIC_OUTPUT, result)
+            producer.flush()
 
             logger.info(
                 f"[WORKER-{partition}] Completed pipeline for {event['clip_id']}"

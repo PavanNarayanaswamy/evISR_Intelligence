@@ -31,6 +31,7 @@ venv/
 ENV/
 env/
 .venv
+evISR_env/
 
 # IDEs
 .vscode/
