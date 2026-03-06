@@ -3,12 +3,14 @@ import os
 import time
 import subprocess
 import math
+from io import BytesIO
 from typing import Any
 
 import folium
 from flask import Flask, render_template, request, redirect, url_for, Response, flash
 from minio.error import S3Error
 from frontend import verification_utils
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = "secret"
@@ -24,7 +26,7 @@ CACHE = {
 }
 
 CACHE_TTL = 10
-DELETED_IDS = set()
+
 
 # ---------------- SEVERITY DERIVATION ----------------
 def derive_severity(score: float):
@@ -53,7 +55,8 @@ def haversine(lat1, lon1, lat2, lon2):
 
     return 2 * R * math.asin(math.sqrt(a))
 
-# ---------------- MINIO INIT (RUN ONCE) ----------------
+
+# ---------------- MINIO INIT ----------------
 @app.before_request
 def init_minio():
     client = verification_utils.get_minio_client()
@@ -63,6 +66,7 @@ def init_minio():
     except S3Error as e:
         print("MinIO bucket error:", e)
 
+# ---------------- GEO ENRICHMENT ----------------
 def enrich_clip_geo(clip):
 
     start_lat = clip.get("start_latitude")
@@ -89,51 +93,23 @@ def enrich_clip_geo(clip):
     clip["severity_numeric"] = numeric
     clip["severity_label"] = label
     clip["severity_color"] = color
-    
-# ---------------- KAFKA LOAD (BUTTON DRIVEN) ----------------
+
+
+# ---------------- LOAD CLIPS FROM KAFKA ----------------
 @app.route("/load_clips")
 def load_clips():
-    print("Loading new clips from Kafka...")
 
     clips = verification_utils.consume_pipeline_results()
-    
-    # remove previously deleted events
-    clips = [c for c in clips if c["clip_id"] not in DELETED_IDS]   
+
     for clip in clips:
         enrich_clip_geo(clip)
-        
-#     for clip in clips:
-
-#         start_lat = clip.get("start_latitude")
-#         start_lon = clip.get("start_longitude")
-#         end_lat = clip.get("end_latitude")
-#         end_lon = clip.get("end_longitude")
-
-#         if all(v is not None for v in [start_lat, start_lon, end_lat, end_lon]):
-
-#             clip["center_latitude"] = (start_lat + end_lat) / 2
-#             clip["center_longitude"] = (start_lon + end_lon) / 2
-
-#             distance_km = haversine(start_lat, start_lon, end_lat, end_lon)
-#             clip["radius_km"] = max(distance_km, 0.2)
-
-#         else:
-#             clip["center_latitude"] = 52.0
-#             clip["center_longitude"] = 19.0
-#             clip["radius_km"] = 0.5
-
-#         score = clip.get("severity_score", 0)
-#         numeric, label, color = derive_severity(score)
-
-#         clip["severity_numeric"] = numeric
-#         clip["severity_label"] = label
-#         clip["severity_color"] = color
 
     CACHE["pending"] = clips
 
     return redirect(url_for("index"))
 
-# ---------------- MINIO VERIFIED LOAD WITH CACHE ----------------
+
+# ---------------- LOAD VERIFIED FROM MINIO ----------------
 def load_verified_cached():
 
     if time.time() - CACHE["verified_ts"] < CACHE_TTL:
@@ -143,22 +119,29 @@ def load_verified_cached():
 
     approved = []
     rejected = []
-
+    deleted_ids = set()
     try:
         objects = client.list_objects(BUCKET, recursive=True)
 
         for obj in objects:
             data = client.get_object(BUCKET, obj.object_name).read().decode()
             record = json.loads(data)
-            if record["clip_id"] in DELETED_IDS:
+
+            if obj.object_name.startswith("deleted/"):
+                deleted_ids.add(record["clip_id"])
                 continue
+
             enrich_clip_geo(record)
 
             if obj.object_name.startswith("approved/"):
-                approved.append(record)
+
+                if record["clip_id"] not in deleted_ids:
+                    approved.append(record)
 
             elif obj.object_name.startswith("rejected/"):
-                rejected.append(record)
+
+                if record["clip_id"] not in deleted_ids:
+                    rejected.append(record)
 
     except S3Error as e:
         print("MinIO read error:", e)
@@ -167,7 +150,8 @@ def load_verified_cached():
     CACHE["rejected"] = rejected
     CACHE["verified_ts"] = time.time()
 
-# ---------------- VIDEO STREAM (WITH LOCAL CACHE) ----------------
+
+# ---------------- VIDEO STREAM ----------------
 @app.route("/video")
 def stream_video():
 
@@ -177,7 +161,6 @@ def stream_video():
 
     mp4_path = ts_path.replace(".ts", ".mp4")
 
-    # convert only once
     if not os.path.exists(mp4_path):
 
         subprocess.run([
@@ -194,8 +177,9 @@ def stream_video():
         open(mp4_path, "rb"),
         mimetype="video/mp4"
     )
-    
-# ---------------- MAP GENERATION ----------------
+
+
+# ---------------- MAP ----------------
 def create_event_map(clips: list[dict[str, Any]]):
 
     if not clips:
@@ -207,21 +191,26 @@ def create_event_map(clips: list[dict[str, Any]]):
     center_lat = sum(lats) / len(lats)
     center_lon = sum(lons) / len(lons)
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles=None)
-
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=2, max_zoom=5, tiles=None)
+    folium.TileLayer(
+        tiles="/tiles/{z}/{x}/{y}.png",
+        attr="Offline OpenStreetMap"
+    ).add_to(m)
+    
     for clip in clips:
 
         popup_html = f"""
         <div style='min-width:220px'>
-        <strong>{clip['clip_id']}</strong><br>
-        Status: {clip.get('status')}<br>
-        Severity: {clip.get('severity_label')}<br>
+        <strong>{clip['clip_id']}</strong>
+
+        Status: {clip.get('status')}
+
+        Severity: {clip.get('severity_label')}
+
         Processed: {clip.get('processed_at')}
         </div>
         """
-        tooltip_text = f"Event: {clip['clip_id']}"
 
-        # choose marker color based on event status
         status = clip.get("status", "pending")
 
         if status == "approved":
@@ -239,11 +228,11 @@ def create_event_map(clips: list[dict[str, Any]]):
             fill_color=color,
             fill_opacity=0.6,
             weight=3,
-            popup=popup_html,
-            tooltip=tooltip_text
+            popup=popup_html
         ).add_to(m)
 
     return m
+
 
 # ---------------- MAIN UI ----------------
 @app.route("/")
@@ -254,9 +243,9 @@ def index():
 
     load_verified_cached()
 
-    pending = [c for c in CACHE["pending"] if c["clip_id"] not in DELETED_IDS]
-    approved = [c for c in CACHE["approved"] if c["clip_id"] not in DELETED_IDS]
-    rejected = [c for c in CACHE["rejected"] if c["clip_id"] not in DELETED_IDS]
+    pending = CACHE["pending"]
+    approved = CACHE["approved"]
+    rejected = CACHE["rejected"]
 
     if filter_type == "pending":
         clips = pending
@@ -267,7 +256,6 @@ def index():
 
     selected_clips = [c for c in clips if c["clip_id"] in selected_ids][:3]
 
-    # LOAD LLM SUMMARY ONLY FOR SELECTED CLIPS
     for clip in selected_clips:
         try:
             if "summary_text" not in clip:
@@ -278,26 +266,19 @@ def index():
             print("Summary load error:", e)
             clip["summary_text"] = "Summary not available"
 
-    # ---------------- MAP DATA SELECTION ----------------
-
     if selected_clips:
         map_data = selected_clips
-
     else:
         if filter_type == "pending":
             map_data = pending
         elif filter_type == "approved":
             map_data = approved
-        elif filter_type == "rejected":
-            map_data = rejected
         else:
-            map_data = pending + approved + rejected
+            map_data = rejected
 
-
-    # generate map
     m = create_event_map(map_data)
     event_map = m.get_root().render()
-        
+
     stats = {
         "total": len(pending) + len(approved) + len(rejected),
         "pending": len(pending),
@@ -314,6 +295,7 @@ def index():
         stats=stats,
         event_map=event_map
     )
+
 
 # ---------------- APPROVE / REJECT ----------------
 @app.route("/verify", methods=["POST"])
@@ -333,28 +315,73 @@ def verify():
         flash("Reviewer Name is required ❗")
         return redirect(url_for("index"))
 
-    verification_utils.save_verification(clip, status, reviewer,comment)
-
-    flash(f"{status.upper()} ✅")
+    verification_utils.save_verification(clip, status, reviewer, comment)
 
     clip_id = clip["clip_id"]
 
-    # REMOVE FROM ALL CACHES
     CACHE["pending"] = [c for c in CACHE["pending"] if c["clip_id"] != clip_id]
     CACHE["approved"] = [c for c in CACHE["approved"] if c["clip_id"] != clip_id]
     CACHE["rejected"] = [c for c in CACHE["rejected"] if c["clip_id"] != clip_id]
 
-    # force reload from MinIO for correct tab
     CACHE["verified_ts"] = 0
+
     flash(f"{status.upper()} ✅")
+
     return redirect(url_for("index"))
+
+
+# ---------------- STORE DELETE EVENT ----------------
+def store_deleted_event(clip_id):
+
+    client = verification_utils.get_minio_client()
+
+    record = {
+        "clip_id": clip_id,
+        "status": "deleted",
+        "deleted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    }
+
+    now = time.gmtime()
+
+    object_name = (
+        f"deleted/"
+        f"{time.strftime('%Y/%m/%d/%H', now)}/"
+        f"{clip_id}.json"
+    )
+
+    payload = json.dumps(record, indent=2).encode()
+
+    client.put_object(
+        BUCKET,
+        object_name,
+        data=BytesIO(payload),
+        length=len(payload),
+        content_type="application/json"
+    )
+
 
 # ---------------- DELETE EVENT ----------------
 @app.route("/delete_event/<clip_id>", methods=["POST"])
 def delete_event(clip_id):
 
-    # persist deletion
-    DELETED_IDS.add(clip_id)
+    client = verification_utils.get_minio_client()
+
+    try:
+
+        # remove previous states
+        for prefix in ["approved/", "rejected/"]:
+
+            objects = client.list_objects(BUCKET, prefix=prefix, recursive=True)
+
+            for obj in objects:
+
+                if obj.object_name.endswith(f"{clip_id}.json"):
+                    client.remove_object(BUCKET, obj.object_name)
+
+        store_deleted_event(clip_id)
+
+    except S3Error as e:
+        print("Delete error:", e)
 
     CACHE["pending"] = [c for c in CACHE["pending"] if c["clip_id"] != clip_id]
     CACHE["approved"] = [c for c in CACHE["approved"] if c["clip_id"] != clip_id]
@@ -362,6 +389,15 @@ def delete_event(clip_id):
 
     return ("", 204)
 
+# ---------------- Offline Map Tiles ----------------
+@app.route("/tiles/<int:z>/<int:x>/<int:y>.png")
+def get_tile(z, x, y):
+    tile_dir = os.path.join("tiles", str(z), str(x))
+    return send_from_directory(
+        tile_dir,
+        f"{y}.png"
+    ) 
+    
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

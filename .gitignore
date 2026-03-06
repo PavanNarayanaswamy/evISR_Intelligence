@@ -98,3 +98,6 @@ Thumbs.db
 .python-version
 
 state_files
+
+# tiles folder
+/frontend/tiles
