@@ -53,15 +53,22 @@ class KafkaProducerClient:
                 # Re-raise if not a partition error or all retries exhausted
                 raise
 
-    def refresh_metadata(self):
+    def refresh_metadata(self, topic):
         """
         Force Kafka producer metadata refresh
         """
+        import time
+
         logger.info("Refreshing Kafka producer metadata")
 
-        # poll forces metadata request
-        self.producer.poll(0)
+        while True:
+            md = self.producer.list_topics(topic=topic, timeout=10)
 
-        # wait broker propagation
-        import time
-        time.sleep(2)
+            if topic in md.topics:
+                partitions = md.topics[topic].partitions
+                logger.info(f"Producer sees partitions: {list(partitions.keys())}")
+                break
+
+            time.sleep(1)
+
+        self.producer.poll(1)

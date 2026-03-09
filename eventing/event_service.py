@@ -12,6 +12,8 @@ from eventing.kafka_producer import KafkaProducerClient
 from utils.logger import get_logger
 from utils.event_logger import append_event_to_file
 from io import BytesIO
+import threading
+
 
 logger = get_logger(__name__)
 
@@ -54,6 +56,7 @@ class EventingService:
         # Kafka admin + producer
         self.kafka_admin = KafkaAdmin(kafka_bootstrap_servers)
         self.kafka_producer = KafkaProducerClient(kafka_bootstrap_servers)
+        self.partition_lock = threading.Lock()
         # Ensure partition-map bucket exists
         if not self.minio_client.bucket_exists(config.MAP_BUCKET):
             logger.info(f"Creating partition map bucket: {config.MAP_BUCKET}")
@@ -309,51 +312,44 @@ class EventingService:
     # ==================================================
     def get_or_create_partition(self, stream_id):
 
-        # self.stream_partition_map = self.load_partition_map()
+        with self.partition_lock:
 
-        if stream_id in self.stream_partition_map:
-            return self.stream_partition_map[stream_id]
+            self.stream_partition_map = self.load_partition_map()
 
-        logger.info(f"New camera detected: {stream_id}")
+            if stream_id in self.stream_partition_map:
+                return self.stream_partition_map[stream_id]
 
-        current = self.kafka_admin.get_partition_count(
-            self.kafka_topic
-        )
+            logger.info(f"New camera detected: {stream_id}")
 
-        # FIRST CAMERA USES EXISTING PARTITION 0
-        if current == 1 and len(self.stream_partition_map) == 0:
-            new_partition = 0
-        else:
-            new_partition = current
-            logger.info(f"Increasing partitions {current} → {current + 1}")
-            self.kafka_admin.increase_partitions(
-                self.kafka_topic,
-                current + 1,
-            )
-            
-            self.kafka_admin.wait_for_partition(
-                self.kafka_topic,
-                new_partition,
+            current = self.kafka_admin.get_partition_count(
+                self.kafka_topic
             )
 
-            # self.kafka_producer.refresh_metadata()
+            if current == 1 and len(self.stream_partition_map) == 0:
+                new_partition = 0
+            else:
+                new_partition = current
 
-            # force metadata refresh
-            self.kafka_producer.producer.list_topics(
-                topic=self.kafka_topic,
-                timeout=10,
-            )
+                logger.info(f"Increasing partitions {current} → {current + 1}")
 
-            import time
-            time.sleep(1)
+                self.kafka_admin.increase_partitions(
+                    self.kafka_topic,
+                    current + 1,
+                )
 
-        self.stream_partition_map[stream_id] = new_partition
-        self.save_partition_map(self.stream_partition_map)
+                self.kafka_admin.wait_for_partition(
+                    self.kafka_topic,
+                    new_partition,
+                )
 
-        logger.info(f"Mapped {stream_id} → partition {new_partition}")
-        
-        return new_partition
+                self.kafka_producer.refresh_metadata(self.kafka_topic)
 
+            self.stream_partition_map[stream_id] = new_partition
+            self.save_partition_map(self.stream_partition_map)
+
+            logger.info(f"Mapped {stream_id} → partition {new_partition}")
+
+            return new_partition
     def reconcile_partition_map(self):
 
         actual = self.kafka_admin.get_partition_count(self.kafka_topic)
