@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, END
 from typing import Dict, Any
 
 from utils.logger import get_logger
-from utils import config
+from kafka_consumer import consumer_config as config
 
 # Import the state model for the graph
 from .swarm_state import SwarmState

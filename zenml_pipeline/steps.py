@@ -56,7 +56,7 @@ def klv_extraction_agent(
         jars=jars,
     )
     
-    response = requests.post("http://localhost:8000/tools/klv", json=state.dict())
+    response = requests.post("http://localhost:8000/tools/klv", json=state.model_dump(mode='json'))
     response.raise_for_status()
     final_state = KLVState.model_validate(response.json())
     
@@ -85,7 +85,7 @@ def object_detection_agent(
         save_mp4=bool(getattr(config, "SAVE_MP4", False)),
     )
     
-    response = requests.post("http://localhost:8000/tools/detection", json=state.dict())
+    response = requests.post("http://localhost:8000/tools/detection", json=state.model_dump(mode='json'))
     response.raise_for_status()
     final_state = DetectionState.model_validate(response.json())
 
@@ -119,7 +119,7 @@ def fusion_context_agent(
         fps=fps,
     )
 
-    response = requests.post("http://localhost:8000/tools/fusion", json=state.dict())
+    response = requests.post("http://localhost:8000/tools/fusion", json=state.model_dump(mode='json'))
     response.raise_for_status()
     final_state = FusionState.model_validate(response.json())
 
@@ -157,7 +157,7 @@ def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
     state = SummaryState(clip_id=clip_id, ts_path=ts_path,
                         fusion_json_uri=fusion_json_uri, output_bucket=output_bucket, model=model)
     
-    response = requests.post("http://localhost:8000/tools/summary", json=state.dict())
+    response = requests.post("http://localhost:8000/tools/summary", json=state.model_dump(mode='json'))
     response.raise_for_status()
     final_state = SummaryState.model_validate(response.json())
 

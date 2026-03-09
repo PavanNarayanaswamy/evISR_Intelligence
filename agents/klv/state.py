@@ -14,8 +14,10 @@ class KLVState(BaseModel):
     jars: List[str] = Field(..., description="JVM JAR paths for JmisbDecoder")
     
     # Outputs (set by nodes)
-    extraction_uri: str = Field(default=None, description="MinIO URI for extracted KLV")
-    decoding_uri: str = Field(default=None, description="MinIO URI for decoded KLV JSON")
+    # extraction_uri: str = Field(default=None, description="MinIO URI for extracted KLV")
+    # decoding_uri: str = Field(default=None, description="MinIO URI for decoded KLV JSON")
+    extraction_uri: Optional[str] = None
+    decoding_uri: Optional[str] = None
     
     # Control/debugging
     emit: bool = Field(default=True, description="Whether to emit decoding_uri")
