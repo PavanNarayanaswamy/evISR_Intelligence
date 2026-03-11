@@ -8,21 +8,14 @@ from kafka_consumer import consumer_config as config
 # Import the state model for the graph
 from .swarm_state import SwarmState
 
-# Import the ZenML steps which will act as tools
-from zenml_pipeline.steps import (
-    minio_segmented_clip,
-    klv_extraction_agent,
-    object_detection_agent,
-    fusion_context_agent,
-    llm_summary_agent,
-)
-
 logger = get_logger(__name__)
 
 # --- Tool Nodes that call ZenML Step Functions ---
 
 def download_clip_node(state: SwarmState) -> Dict[str, Any]:
     """Downloads the video clip by calling the ZenML step function."""
+    from zenml_pipeline.steps import minio_segmented_clip
+    
     logger.info(f"[SWARM] Downloading clip: {state.clip_id}")
     # This step function returns: ts_path, video_duration
     ts_path, video_duration = minio_segmented_clip(
@@ -33,6 +26,8 @@ def download_clip_node(state: SwarmState) -> Dict[str, Any]:
 
 def klv_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the KLV extraction step function."""
+    from zenml_pipeline.steps import klv_extraction_agent
+    
     logger.info(f"[SWARM] Calling KLV tool for clip: {state.clip_id}")
     # This step function returns: klv_extraction_uri, klv_decoding_uri
     klv_extraction_uri, klv_decoding_uri = klv_extraction_agent(
@@ -53,6 +48,8 @@ def klv_tool_node(state: SwarmState) -> Dict[str, Any]:
 
 def detection_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the object detection step function."""
+    from zenml_pipeline.steps import object_detection_agent
+    
     logger.info(f"[SWARM] Calling detection tool for clip: {state.clip_id}")
     # This step function returns: detection_uri, fps
     det_json_uri, fps = object_detection_agent(
@@ -73,6 +70,8 @@ def detection_tool_node(state: SwarmState) -> Dict[str, Any]:
 
 def fusion_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the fusion context step function."""
+    from zenml_pipeline.steps import fusion_context_agent
+    
     logger.info(f"[SWARM] Calling fusion tool for clip: {state.clip_id}")
     # This step function returns: fusion_uri, geo_coordinates
     fusion_uri, geo_coordinates = fusion_context_agent(
@@ -87,6 +86,8 @@ def fusion_tool_node(state: SwarmState) -> Dict[str, Any]:
 
 def summary_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the LLM summary step function."""
+    from zenml_pipeline.steps import llm_summary_agent
+    
     logger.info(f"[SWARM] Calling summary tool for clip: {state.clip_id}")
     # This step function returns: summary_uri, severity_score, severity_label
     summary_uri, severity_score, severity_label = llm_summary_agent(

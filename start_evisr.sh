@@ -39,7 +39,7 @@ echo "=============================================" | tee -a $SYSTEM_LOG
 export ZENML_AUTO_OPEN_DASHBOARD=false
 export PYTHONPATH=.
 
-source evISR_env/bin/activate
+source venv/bin/activate
 
 # ==========================================
 # Ensure Infrastructure Running
