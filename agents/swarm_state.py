@@ -23,7 +23,7 @@ class SwarmState(BaseModel):
     
     # Fusion agent output
     fusion_uri: Optional[str] = None
-    geo_coordinates: Optional[Dict[str, float]] = None
+    geo_coordinates: Optional[Dict[str, Optional[float]]] = None
 
     # Summary agent output
     summary_uri: Optional[str] = None

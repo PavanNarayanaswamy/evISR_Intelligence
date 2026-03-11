@@ -21,3 +21,6 @@ requests
 fastapi
 uvicorn
 python-multipart
+dotenv
+langgraph-cli[inmem]
+langgraph-cli
