@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 
@@ -38,7 +39,7 @@ def get_logger(name: str) -> logging.Logger:
     file_handler.setFormatter(formatter)
 
     # Console handler
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)

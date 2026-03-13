@@ -45,6 +45,10 @@ def get_partition_count(admin):
 
 
 def main():
+    # Clean up any old zombie consumers from previous runs
+    logger.info("Cleaning up existing consumer processes")
+    subprocess.run(["pkill", "-f", "kafka_consumer/consumer.py"])
+
     admin = KafkaAdminClient(
         bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS
     )

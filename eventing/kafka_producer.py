@@ -47,27 +47,32 @@ class KafkaProducerClient:
                             f"Unknown partition {partition} on attempt {attempt + 1}/{max_retries}. "
                             f"Refreshing metadata and retrying..."
                         )
-                        self.refresh_metadata()
+                        self.refresh_metadata(topic, partition)
                         time.sleep(1)
                         continue
                 # Re-raise if not a partition error or all retries exhausted
                 raise
 
-    def refresh_metadata(self, topic):
+    def refresh_metadata(self, topic, expected_partition):
         """
-        Force Kafka producer metadata refresh
+        Force Kafka producer metadata refresh and wait until the expected partition exists.
         """
         import time
 
-        logger.info("Refreshing Kafka producer metadata")
+        logger.info(f"Refreshing Kafka metadata. Waiting for partition {expected_partition}")
 
         while True:
             md = self.producer.list_topics(topic=topic, timeout=10)
 
             if topic in md.topics:
                 partitions = md.topics[topic].partitions
-                logger.info(f"Producer sees partitions: {list(partitions.keys())}")
-                break
+                available = list(partitions.keys())
+
+                logger.info(f"Producer sees partitions: {available}")
+
+                if expected_partition in partitions:
+                    logger.info(f"Partition {expected_partition} is now available.")
+                    break
 
             time.sleep(1)
 

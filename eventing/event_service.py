@@ -253,7 +253,7 @@ class EventingService:
             return
 
         self.stream_partition_map = self.load_partition_map()
-        # self.reconcile_partition_map()
+        self.reconcile_partition_map()
 
         # --------------------------------------------------
         # Dynamic polling loop
@@ -342,7 +342,7 @@ class EventingService:
                     new_partition,
                 )
 
-                self.kafka_producer.refresh_metadata(self.kafka_topic)
+                self.kafka_producer.refresh_metadata(self.kafka_topic, new_partition)
 
             self.stream_partition_map[stream_id] = new_partition
             self.save_partition_map(self.stream_partition_map)
