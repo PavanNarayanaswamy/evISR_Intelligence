@@ -1,17 +1,10 @@
 # zenml_pipeline/steps.py
 from zenml import step, log_metadata
 from pathlib import Path
-import json
-import os
-import datetime
-import subprocess
-import math
 import requests
 from typing import Dict, Any
 from typing_extensions import Annotated
-
 from utils.downloads import download_video_from_uri
-from .minio_utils import download_segment, upload_output, get_minio_client, download_file
 from utils.logger import get_logger
 from utils import config
 
@@ -29,7 +22,6 @@ logger = get_logger(__name__)
 # -------------------------------------------------
 # DOWNLOAD STEP
 # -------------------------------------------------
-@step(enable_cache=False)
 def minio_segmented_clip(clip_id: str, clip_uri: str) -> Tuple[Annotated[str, "video_path"], Annotated[float, "video_duration"]]:
     """
     Downloads TS from MinIO by calling the utility download function.
@@ -37,7 +29,6 @@ def minio_segmented_clip(clip_id: str, clip_uri: str) -> Tuple[Annotated[str, "v
     return download_video_from_uri(clip_id, clip_uri)
 
 
-@step(enable_cache=False)
 def klv_extraction_agent(
     ts_path: str,
     clip_id: str,
@@ -68,7 +59,6 @@ def klv_extraction_agent(
     )
 
 
-@step(enable_cache=False)
 def object_detection_agent(
     clip_id: str, ts_path: str, output_bucket_detection: str, output_path: str,
     confidence_threshold: float, distance_threshold: int, hit_counter_max: int,
@@ -95,7 +85,6 @@ def object_detection_agent(
     return final_state.det_json_uri, final_state.fps
 
 
-@step(enable_cache=False)
 def fusion_context_agent(
     clip_id: str,
     video_duration: float,
@@ -138,7 +127,6 @@ def fusion_context_agent(
 
     return final_state.fusion_uri, geo_coordinates
 
-@step(enable_cache=False)
 def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
                      output_bucket: str, model: str = "qwen3-vl:30b") -> tuple[
     Annotated[str, "summary_uri"],

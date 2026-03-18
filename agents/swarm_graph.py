@@ -1,7 +1,8 @@
 # agents/swarm_graph.py
 from langgraph.graph import StateGraph, END
+from langfuse import observe
 from typing import Dict, Any
-
+import os
 from utils.logger import get_logger
 from kafka_consumer import consumer_config as config
 
@@ -10,8 +11,7 @@ from .swarm_state import SwarmState
 
 logger = get_logger(__name__)
 
-# --- Tool Nodes that call ZenML Step Functions ---
-
+@observe()  # Langfuse tracing for the graph
 def download_clip_node(state: SwarmState) -> Dict[str, Any]:
     """Downloads the video clip by calling the ZenML step function."""
     from zenml_pipeline.steps import minio_segmented_clip
@@ -24,6 +24,7 @@ def download_clip_node(state: SwarmState) -> Dict[str, Any]:
     )
     return {"ts_path": ts_path, "video_duration": video_duration}
 
+@observe()  # Langfuse tracing for the node
 def klv_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the KLV extraction step function."""
     from zenml_pipeline.steps import klv_extraction_agent
@@ -45,7 +46,7 @@ def klv_tool_node(state: SwarmState) -> Dict[str, Any]:
         "klv_extraction_uri": klv_extraction_uri,
         "klv_decoding_uri": klv_decoding_uri,
     }
-
+@observe()  # Langfuse tracing for the node
 def detection_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the object detection step function."""
     from zenml_pipeline.steps import object_detection_agent
@@ -67,7 +68,7 @@ def detection_tool_node(state: SwarmState) -> Dict[str, Any]:
         "det_json_uri": det_json_uri,
         "fps": fps
     }
-
+@observe()  # Langfuse tracing for the node
 def fusion_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the fusion context step function."""
     from zenml_pipeline.steps import fusion_context_agent
@@ -83,7 +84,7 @@ def fusion_tool_node(state: SwarmState) -> Dict[str, Any]:
         fps=state.fps,
     )
     return {"fusion_uri": fusion_uri, "geo_coordinates": geo_coordinates}
-
+@observe()  # Langfuse tracing for the node
 def summary_tool_node(state: SwarmState) -> Dict[str, Any]:
     """Calls the LLM summary step function."""
     from zenml_pipeline.steps import llm_summary_agent
