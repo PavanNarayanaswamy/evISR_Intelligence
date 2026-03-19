@@ -60,7 +60,7 @@ cleanup() {
     echo ""
     echo "[INFO] Shutting down EVISR..."
 
-    while read pid; do
+    while read -r pid; do
         if ps -p $pid > /dev/null; then
             kill $pid 2>/dev/null || true
             sleep 1
@@ -83,7 +83,7 @@ python3 video_ingest_service/ingest_video_clip.py >> $SYSTEM_LOG 2>&1
 # ==========================================
 # STEP 2: Stream Simulator
 # ==========================================
-python3 stream_video.py --mode multi --count $STREAM_COUNT >> $SYSTEM_LOG 2>&1 &
+python3 stream_video.py --mode multi --count $STREAM_COUNT >> /dev/null 2>&1 &
 echo $! >> $PID_FILE
 
 sleep 5
@@ -105,10 +105,30 @@ echo $! >> $PID_FILE
 sleep 3
 
 # ==========================================
-# STEP 5: Autoscaler
+# STEP 5: MCP Server
+# ==========================================
+echo "[INFO] Starting MCP Server..." | tee -a $SYSTEM_LOG
+PYTHONPATH=. python3 agents/mcp_server.py >> $SYSTEM_LOG 2>&1 &
+echo $! >> $PID_FILE
+
+sleep 3
+
+# ==========================================
+# STEP 6: Autoscaler
 # ==========================================
 python3 kafka_consumer/consumer_autoscaler.py >> $SYSTEM_LOG 2>&1 &
 echo $! >> $PID_FILE
+
+sleep 3
+
+# ==========================================
+# STEP 7: Frontend
+# ==========================================
+echo "[INFO] Starting Frontend..." | tee -a $SYSTEM_LOG
+PYTHONPATH=. python3 frontend/app.py >> $SYSTEM_LOG 2>&1 &
+echo $! >> $PID_FILE
+
+sleep 3
 
 echo ""
 echo "============================================="
@@ -122,11 +142,11 @@ echo ""
 # Health Monitor
 # ==========================================
 while true; do
-    for pid in $(cat $PID_FILE); do
-        if ! ps -p $pid > /dev/null; then
-            echo "[ERROR] Process $pid crashed."
+    while read -r pid; do
+        if ! ps -p "$pid" > /dev/null; then
+            echo "[ERROR] Process $pid crashed." | tee -a $SYSTEM_LOG
             cleanup
         fi
-    done
+    done < "$PID_FILE"
     sleep 5
 done

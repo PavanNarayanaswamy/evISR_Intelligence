@@ -20,15 +20,26 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv >> $SETUP_LOG 2>&1
 fi
 
+
 echo "[INFO] Activating virtual environment..." | tee -a $SETUP_LOG
 source venv/bin/activate
 
 # ==========================================
-# Install Python Dependencies (Smart Install)
+# Install Python Dependencies
 # ==========================================
+echo "[INFO] Upgrading pip..." | tee -a $SETUP_LOG
+pip install --upgrade pip >> $SETUP_LOG 2>&1
+
 echo "[INFO] Checking Python requirements..." | tee -a $SETUP_LOG
-pip install -r requirements.txt --quiet >> $SETUP_LOG 2>&1
+pip install --no-cache-dir --progress-bar off -r requirements.txt >> $SETUP_LOG 2>&1
 echo "[INFO] Python dependencies verified." | tee -a $SETUP_LOG
+
+# ==========================================
+# Install openscenesense_ollama seperately (if not in requirements)
+# ==========================================
+echo "[INFO] Installing openscenesense_ollama..." | tee -a $SETUP_LOG
+pip install openscenesense_ollama --no-deps >> $SETUP_LOG 2>&1
+echo "[INFO] openscenesense_ollama installed." | tee -a $SETUP_LOG
 
 # ==========================================
 # Check Graphviz (Install Only If Missing)
