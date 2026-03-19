@@ -43,6 +43,9 @@ pkill -f ingest_video_streaming.py 2>/dev/null || true
 pkill -f ingest_video_clip.py 2>/dev/null || true
 pkill -f eventing/main.py 2>/dev/null || true
 pkill -f consumer_autoscaler.py 2>/dev/null || true
+pkill -f kafka_consumer/consumer.py 2>/dev/null || true   
+pkill -f agents/mcp_server.py 2>/dev/null || true         
+pkill -f frontend/app.py 2>/dev/null || true
 
 # ==========================================
 # Stop ZenML Local Server (if running)
