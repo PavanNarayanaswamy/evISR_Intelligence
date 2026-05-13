@@ -128,7 +128,7 @@ def fusion_context_agent(
     return final_state.fusion_uri, geo_coordinates
 
 def llm_summary_agent(clip_id: str, ts_path: str, fusion_json_uri: str,
-                     output_bucket: str, model: str = "qwen3-vl:30b") -> tuple[
+                     output_bucket: str, model: str = "qwen3-vl:32b") -> tuple[
     Annotated[str, "summary_uri"],
     Annotated[float, "severity_score"],
     Annotated[str, "severity_label"],

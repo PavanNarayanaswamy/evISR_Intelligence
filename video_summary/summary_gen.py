@@ -41,7 +41,7 @@ class VideoLLMSummarizer:
     @staticmethod
     def summarize(
         fusion_context: Dict,
-        model: str = "qwen3-vl:30b",
+        model: str = "qwen3-vl:32b",
         video_path: str | None = None,
     ) -> str:
         """

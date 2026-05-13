@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime
 from typing import List, Dict, Any
+import uuid
 
 from confluent_kafka import Consumer, Producer
 from zenml_pipeline.minio_utils import get_minio_client, parse_minio_uri
@@ -25,9 +26,9 @@ def create_consumer():
 
     consumer = Consumer({
         "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
-        "group.id": "summary-verification-ui",
+        "group.id": "summary-verification-ui-" + str(uuid.uuid4()),
         "auto.offset.reset": "earliest",
-        "enable.auto.commit": True
+        "enable.auto.commit": False
     })
 
     consumer.subscribe([PIPELINE_TOPIC])
@@ -59,6 +60,7 @@ def consume_pipeline_results(timeout=10) -> List[Dict[str, Any]]:
             continue
 
         event = json.loads(msg.value().decode())
+        print(event)
 
         print("Received:", event)
 
@@ -129,10 +131,12 @@ def download_video(video_uri):
 # -------------------------------------------------
 # SAVE VERIFICATION
 # -------------------------------------------------
-def save_verification(clip_event, status, reviewer,comment):
+# verification_utils.py - Updated save_verification function
 
+def save_verification(clip_event, status, reviewer, comment):
     producer = create_producer()
 
+    # ✅ PRESERVE EVERYTHING from the original clip_event
     record = {
         "clip_id": clip_event["clip_id"],
         "status": status,
@@ -140,7 +144,14 @@ def save_verification(clip_event, status, reviewer,comment):
         "reviewer_comment": comment,
         "verified_at": datetime.utcnow().isoformat(),
         "clip_uri": clip_event["clip_uri"],
-        "summary_uri": clip_event["summary_uri"]
+        "summary_uri": clip_event["summary_uri"],
+        "severity_score": clip_event.get("severity_score"),
+        "severity_label": clip_event.get("severity_label"),
+        "start_latitude": clip_event.get("start_latitude"),
+        "start_longitude": clip_event.get("start_longitude"),
+        "end_latitude": clip_event.get("end_latitude"),
+        "end_longitude": clip_event.get("end_longitude"),
+        "processed_at": clip_event.get("processed_at")
     }
 
     producer.produce(

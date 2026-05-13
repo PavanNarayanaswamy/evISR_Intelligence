@@ -81,7 +81,7 @@ def create_isr_pipeline(pipeline_name: str):
             ts_path=ts_path,
             fusion_json_uri=fusion_json,
             output_bucket=output_bucket_summary,
-            model="qwen3-vl:30b",
+            model="qwen3-vl:32b",
         )
         logger.info(f"LLM summary completed for clip_id: {clip_id}")
 

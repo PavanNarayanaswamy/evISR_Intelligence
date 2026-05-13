@@ -207,7 +207,7 @@ def create_event_map(clips: list[dict[str, Any]]):
     center_lat = sum(lats) / len(lats)
     center_lon = sum(lons) / len(lons)
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles=None)
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles='OpenStreetMap')
 
     for clip in clips:
 
@@ -316,14 +316,64 @@ def index():
     )
 
 # ---------------- APPROVE / REJECT ----------------
+# @app.route("/verify", methods=["POST"])
+# def verify():
+
+#     clip = {
+#         "clip_id": request.form["clip_id"],
+#         "clip_uri": request.form["clip_uri"],
+#         "summary_uri": request.form["summary_uri"],
+#     }
+
+#     status = request.form["status"]
+#     reviewer = request.form.get("reviewer", "").strip()
+#     comment = request.form.get("reviewer_comment", "").strip()
+
+#     if not reviewer:
+#         flash("Reviewer Name is required ❗")
+#         return redirect(url_for("index"))
+
+#     verification_utils.save_verification(clip, status, reviewer,comment)
+
+#     flash(f"{status.upper()} ✅")
+
+#     clip_id = clip["clip_id"]
+
+#     # REMOVE FROM ALL CACHES
+#     CACHE["pending"] = [c for c in CACHE["pending"] if c["clip_id"] != clip_id]
+#     CACHE["approved"] = [c for c in CACHE["approved"] if c["clip_id"] != clip_id]
+#     CACHE["rejected"] = [c for c in CACHE["rejected"] if c["clip_id"] != clip_id]
+
+#     print(f"pending: {len(CACHE['pending'])}, approved: {len(CACHE['approved'])}, rejected: {len(CACHE['rejected'])}")
+#     print(f"pending IDs: {[c['clip_id'] for c in CACHE['pending']]}")
+#     print(f"approved IDs: {[c['clip_id'] for c in CACHE['approved']]}")
+#     print(f"rejected IDs: {[c['clip_id'] for c in CACHE['rejected']]}")
+
+#     # force reload from MinIO for correct tab
+#     CACHE["verified_ts"] = 0
+#     flash(f"{status.upper()} ✅")
+#     return redirect(url_for("index"))
+
+
 @app.route("/verify", methods=["POST"])
 def verify():
 
-    clip = {
-        "clip_id": request.form["clip_id"],
-        "clip_uri": request.form["clip_uri"],
-        "summary_uri": request.form["summary_uri"],
-    }
+    clip_id = request.form["clip_id"]
+
+    all_clips = (
+        CACHE["pending"] +
+        CACHE["approved"] +
+        CACHE["rejected"]
+    )
+
+    clip = next(
+        (c for c in all_clips if c["clip_id"] == clip_id),
+        None
+    )
+
+    if not clip:
+        flash("Clip not found ❗")
+        return redirect(url_for("index"))
 
     status = request.form["status"]
     reviewer = request.form.get("reviewer", "").strip()
@@ -333,20 +383,32 @@ def verify():
         flash("Reviewer Name is required ❗")
         return redirect(url_for("index"))
 
-    verification_utils.save_verification(clip, status, reviewer,comment)
+    verification_utils.save_verification(
+        clip,
+        status,
+        reviewer,
+        comment
+    )
 
     flash(f"{status.upper()} ✅")
 
-    clip_id = clip["clip_id"]
+    CACHE["pending"] = [
+        c for c in CACHE["pending"]
+        if c["clip_id"] != clip_id
+    ]
 
-    # REMOVE FROM ALL CACHES
-    CACHE["pending"] = [c for c in CACHE["pending"] if c["clip_id"] != clip_id]
-    CACHE["approved"] = [c for c in CACHE["approved"] if c["clip_id"] != clip_id]
-    CACHE["rejected"] = [c for c in CACHE["rejected"] if c["clip_id"] != clip_id]
+    CACHE["approved"] = [
+        c for c in CACHE["approved"]
+        if c["clip_id"] != clip_id
+    ]
 
-    # force reload from MinIO for correct tab
+    CACHE["rejected"] = [
+        c for c in CACHE["rejected"]
+        if c["clip_id"] != clip_id
+    ]
+
     CACHE["verified_ts"] = 0
-    flash(f"{status.upper()} ✅")
+
     return redirect(url_for("index"))
 
 # ---------------- DELETE EVENT ----------------

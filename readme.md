@@ -36,7 +36,7 @@ If you are running this project on a **new system**, you must first install and 
 - **Ollama (with required model pre-downloaded)**
 
 > **Important (Ollama Model Requirement)**  
-> This project depends on the following Ollama model being available locally: qwen3-vl:30b
+> This project depends on the following Ollama model being available locally: qwen3-vl:32b
 
 👉 Please refer to the **Service Setup Documentation** for detailed step-by-step instructions on:
 - Installing dependencies (Java, MinIO, Kafka, etc.)

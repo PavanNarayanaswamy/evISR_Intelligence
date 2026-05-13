@@ -96,7 +96,7 @@ def summary_tool_node(state: SwarmState) -> Dict[str, Any]:
         ts_path=state.ts_path,
         fusion_json_uri=state.fusion_uri,
         output_bucket=config.OUTPUT_BUCKET_SUMMARY,
-        model="qwen3-vl:30b",  # This should ideally be in config
+        model="qwen3-vl:32b",  # This should ideally be in config
     )
     return {
         "summary_uri": summary_uri,
